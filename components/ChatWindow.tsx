@@ -8,6 +8,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 interface Props {
   session: SessionInfo | null;
@@ -91,6 +92,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
 }
 
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
+  const isMobile = useIsMobile();
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
@@ -167,7 +169,36 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
-  const chatInputElement = (
+  const chatInputElement = isMobile ? (
+    <div className="chat-input-wrapper" style={{ flexShrink: 0, background: "transparent", padding: "0 8px 8px" }}>
+      <ChatInput
+        ref={chatInputRef}
+        onSend={handleSend}
+        onAbort={handleAbort}
+        onSteer={agentRunning ? handleSteer : undefined}
+        onFollowUp={agentRunning ? handleFollowUp : undefined}
+        isStreaming={agentRunning}
+        model={displayModelValue}
+        modelNames={modelNames}
+        modelList={modelList}
+        onModelChange={handleModelChange}
+        onCompact={session || isNew ? handleCompact : undefined}
+        onAbortCompaction={handleAbortCompaction}
+        isCompacting={isCompacting}
+        compactError={compactError}
+        toolPreset={toolPreset}
+        onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+        thinkingLevel={thinkingLevel}
+        onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
+        availableThinkingLevels={availableThinkingLevels}
+        thinkingLevelMap={currentThinkingLevelMap}
+        retryInfo={retryInfo}
+        soundEnabled={soundEnabled}
+        onSoundToggle={onSoundToggle}
+        isMobile
+      />
+    </div>
+  ) : (
     <ChatInput
       ref={chatInputRef}
       onSend={handleSend}
@@ -194,6 +225,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onSoundToggle={onSoundToggle}
     />
   );
+
+  // Remove the old chatInputElement definition below
 
   if (loading) {
     return (
@@ -289,7 +322,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       <>
       <div className="relative flex flex-1 overflow-hidden">
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
-          <div className="mx-auto max-w-[820px] px-4">
+          <div className="chat-msg-inner mx-auto max-w-[820px] px-4">
 
             {(() => {
               const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
@@ -368,12 +401,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <div ref={messagesEndRef} />
           </div>
         </div>
+        {!isMobile && (
         <ChatMinimap
           messages={messages}
           streamingMessage={streamState.streamingMessage}
           scrollContainer={scrollContainerRef}
           messageRefs={messageRefs}
         />
+        )}
       </div>
 
       <div className="relative">

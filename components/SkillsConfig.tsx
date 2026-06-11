@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SkillSearchResult } from "@/app/api/skills/search/route";
 
 interface Skill {
@@ -513,6 +514,7 @@ export function SkillsConfig({
   cwd: string;
   onClose: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -598,11 +600,12 @@ export function SkillsConfig({
     >
       <div
         style={{
-          width: 860,
-          height: "78vh",
+          width: isMobile ? "100%" : 860,
+          height: isMobile ? "100%" : "78vh",
+          maxWidth: isMobile ? "100%" : undefined,
           background: "var(--bg)",
           border: "1px solid var(--border)",
-          borderRadius: 10,
+          borderRadius: isMobile ? 0 : 10,
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 8px 32px rgba(0,0,0,0.18)",

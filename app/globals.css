@@ -317,11 +317,18 @@ span.linenumber {
   }
 }
 
-/* Mobile sidebar: slide in/out as overlay */
+/* ── Mobile (≤ 640px) ───────────────────────────────────────────── */
 @media (max-width: 640px) {
+  /* Reduce base font slightly */
+  html {
+    font-size: 13px;
+  }
+
   .chat-stats-center {
     display: none !important;
   }
+
+  /* Sidebar: fixed overlay slide-in */
   .sidebar-container {
     position: fixed !important;
     top: 0;
@@ -329,6 +336,7 @@ span.linenumber {
     bottom: 0;
     width: 280px;
     max-width: 85vw;
+    z-index: 400;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
   }
   .sidebar-container.sidebar-open {
@@ -338,21 +346,83 @@ span.linenumber {
   .sidebar-container.sidebar-closed {
     transform: translateX(-100%);
     box-shadow: none;
+    pointer-events: none;
   }
 
+  /* Right panel: fixed overlay covering everything below top bar */
   .right-panel-container {
-    overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
-    flex-shrink: 0;
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 350;
+    transition: transform 0.25s ease;
   }
   .right-panel-container.right-panel-open {
-    width: 100%;
-    min-width: 0;
+    width: 100% !important;
+    min-width: 0 !important;
+    transform: translateX(0);
   }
   .right-panel-container.right-panel-closed {
-    width: 0 !important;
+    width: 100% !important;
     min-width: 0 !important;
+    transform: translateX(100%);
+    pointer-events: none;
     border-left: none !important;
+  }
+
+  /* Right-panel toggle button: move inside the right panel as a close button */
+  .mobile-file-panel-close {
+    display: flex !important;
+  }
+
+  /* Hide minimap on mobile */
+  .chat-minimap-col {
     display: none !important;
   }
+
+  /* Message area: full width */
+  .chat-msg-inner {
+    max-width: 100% !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* User message bubbles: wider on mobile */
+  .msg-user-row {
+    max-width: 92% !important;
+  }
+
+  /* Top bar: slimmer */
+  .top-bar-btn {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* Prompt placeholder: smaller on mobile */
+  .prompt-placeholder {
+    font-size: 14px !important;
+  }
+
+  /* Dropdowns/panels: wider */
+  .branch-dropdown {
+    width: 100vw !important;
+    left: 0 !important;
+  }
+
+  /* Mobile: empty state header - smaller title, stack if needed */
+  .mb-3 > div:first-child {
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+  .mb-3 > div:first-child > span:first-child {
+    font-size: 20px !important;
+  }
+  .mb-3 > div:first-child > span:nth-child(2) {
+    font-size: 16px !important;
+  }
+  .mb-3 > div:first-child > span:nth-child(3) {
+    font-size: 11px !important;
+  }
+
 }
