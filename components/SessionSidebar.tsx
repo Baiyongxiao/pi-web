@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
+import { encodeFilePathForApi } from "@/lib/file-paths";
 
 interface Props {
   selectedSessionId: string | null;
@@ -213,8 +214,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [explorerKey, setExplorerKey] = useState(0);
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
+  const [uploadDir, setUploadDir] = useState<string>("");
+  const [uploadDirOpen, setUploadDirOpen] = useState(false);
+  const [subdirs, setSubdirs] = useState<string[]>([]);
+  const [browsingPath, setBrowsingPath] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadDirRef = useRef<HTMLDivElement>(null);
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploadDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
@@ -251,6 +262,85 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
       if (d.home) setHomeDir(d.home);
     }).catch(() => {});
+  }, []);
+
+  // Fetch subdirectories at a given relative path from cwd
+  const fetchSubdirsAt = useCallback(async (relPath: string) => {
+    const dir = selectedCwdProp ?? selectedCwd;
+    if (!dir) return;
+    try {
+      const targetDir = relPath ? dir + "/" + relPath : dir;
+      const encoded = encodeFilePathForApi(targetDir);
+      const res = await fetch(`/api/files/${encoded}?type=list`);
+      if (!res.ok) { setSubdirs([]); return; }
+      const data = await res.json() as { entries?: { name: string; isDir: boolean }[] };
+      const dirs = (data.entries ?? [])
+        .filter((e) => e.isDir)
+        .map((e) => e.name);
+      setSubdirs(dirs);
+    } catch {
+      setSubdirs([]);
+    }
+  }, [selectedCwdProp, selectedCwd]);
+
+  const navigateInto = useCallback((dirName: string) => {
+    const next = browsingPath ? browsingPath + "/" + dirName : dirName;
+    setBrowsingPath(next);
+    fetchSubdirsAt(next);
+  }, [browsingPath, fetchSubdirsAt]);
+
+  const navigateTo = useCallback((relPath: string) => {
+    setBrowsingPath(relPath);
+    fetchSubdirsAt(relPath);
+  }, [fetchSubdirsAt]);
+
+  // Breadcrumb segments from browsingPath
+  const breadcrumbs = browsingPath ? browsingPath.split("/") : [];
+
+  // Upload files to the server
+  const handleUpload = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const dir = selectedCwdProp ?? selectedCwd;
+    if (!dir) return;
+
+    setUploading(true);
+    try {
+      const targetDir = uploadDir ? dir + "/" + uploadDir : dir;
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+      formData.append("targetDir", targetDir);
+
+      const res = await fetch("/api/files/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        // Refresh explorer after successful upload
+        setExplorerKey((k) => k + 1);
+        setUploadDone(true);
+        if (uploadDoneTimerRef.current) clearTimeout(uploadDoneTimerRef.current);
+        uploadDoneTimerRef.current = setTimeout(() => setUploadDone(false), 2000);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setUploading(false);
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [selectedCwdProp, selectedCwd, uploadDir]);
+
+  // Close upload dir dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (uploadDirRef.current && !uploadDirRef.current.contains(e.target as Node)) {
+        setUploadDirOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const restoredRef = useRef(false);
@@ -766,7 +856,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               title="Refresh explorer"
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
-                width: 26, height: 26, padding: 0, marginRight: 6,
+                width: 26, height: 26, padding: 0,
                 background: explorerRefreshDone ? "rgba(74,222,128,0.18)" : "none",
                 border: "none",
                 color: explorerRefreshDone ? "#4ade80" : "var(--text-dim)",
@@ -789,6 +879,183 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               )}
             </button>
+            {/* Upload button */}
+            <div ref={uploadDirRef} style={{ position: "relative", marginRight: 6 }}>
+              <button
+                onClick={(e) => {
+                  // Fetch subdirectories when opening
+                  if (!uploadDirOpen) {
+                    setBrowsingPath("");
+                    fetchSubdirsAt("");
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setPopupPos({ top: rect.bottom + 4, left: rect.right - 160 });
+                  }
+                  setUploadDirOpen((v) => !v);
+                }}
+                disabled={uploading}
+                title="Upload files to project"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 26, height: 26, padding: 0,
+                  background: uploadDone ? "rgba(74,222,128,0.18)" : (uploading ? "rgba(37,99,235,0.10)" : "none"),
+                  border: "none",
+                  color: uploadDone ? "#4ade80" : (uploading ? "var(--accent)" : "var(--text-dim)"),
+                  cursor: uploading ? "not-allowed" : "pointer",
+                  borderRadius: 5,
+                  flexShrink: 0,
+                  transition: "color 0.3s, background 0.3s",
+                }}
+                onMouseEnter={(e) => {
+                  if (uploading || uploadDone) return;
+                  e.currentTarget.style.color = "var(--text-muted)";
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (uploading || uploadDone) return;
+                  e.currentTarget.style.color = "var(--text-dim)";
+                  e.currentTarget.style.background = "none";
+                }}
+              >
+                {uploadDone ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : uploading ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                )}
+              </button>
+              {/* Upload directory dropdown — navigable */}
+              {uploadDirOpen && (
+                <div
+                  style={{
+                    position: "fixed",
+                    zIndex: 110,
+                    minWidth: 180,
+                    maxHeight: 260,
+                    overflowY: "auto",
+                    top: popupPos?.top ?? 0,
+                    left: popupPos?.left ?? 0,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                    padding: "4px 0",
+                  }}
+                >
+                  {/* Breadcrumb */}
+                  <div style={{ padding: "6px 10px 2px", fontSize: 10, color: "var(--text-dim)", display: "flex", flexWrap: "wrap", gap: 2, rowGap: 0 }}>
+                    {breadcrumbs.length === 0 ? (
+                      <span style={{ fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>Upload to Root</span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => navigateTo("")}
+                          style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", cursor: "pointer", fontSize: 10, fontWeight: 600, letterSpacing: "0.05em" }}
+                        >
+                          Root
+                        </button>
+                        {breadcrumbs.map((seg, i) => (
+                          <span key={i} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                            <span style={{ color: "var(--text-dim)" }}>/</span>
+                            {i === breadcrumbs.length - 1 ? (
+                              <span style={{ fontWeight: 600, color: "var(--text)", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {seg}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => navigateTo(breadcrumbs.slice(0, i + 1).join("/"))}
+                                style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", cursor: "pointer", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 60 }}
+                              >
+                                {seg}
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Upload here button for current browsing path */}
+                  <div style={{ padding: "4px 6px" }}>
+                    <button
+                      onClick={() => {
+                        setUploadDir(browsingPath);
+                        setUploadDirOpen(false);
+                        if (fileInputRef.current) fileInputRef.current.click();
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                        width: "100%", padding: "5px 0",
+                        background: "rgba(37,99,235,0.08)",
+                        border: "1px solid rgba(37,99,235,0.2)",
+                        borderRadius: 5,
+                        color: "var(--accent)",
+                        cursor: "pointer", fontSize: 11, fontWeight: 600,
+                        transition: "background 0.1s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(37,99,235,0.15)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(37,99,235,0.08)"; }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload to{breadcrumbs.length ? " " + breadcrumbs.join("/") : " Root"}
+                    </button>
+                  </div>
+
+                  {subdirs.length > 0 && <div style={{ height: 1, background: "var(--border)", margin: "2px 6px" }} />}
+
+                  {/* Subdirectory list — click to navigate deeper */}
+                  {subdirs.map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => navigateInto(d)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        width: "100%", padding: "5px 10px",
+                        background: "none",
+                        border: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer", fontSize: 11, textAlign: "left",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2" />
+                      </svg>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d}</span>
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="3 2 7 5 3 8" />
+                      </svg>
+                    </button>
+                  ))}
+                  {subdirs.length === 0 && breadcrumbs.length > 0 && (
+                    <div style={{ padding: "10px 10px", fontSize: 10, color: "var(--text-dim)", fontStyle: "italic", textAlign: "center" }}>
+                      No subdirectories
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={(e) => { void handleUpload(e.target.files); }}
+              style={{ display: "none" }}
+            />
           </div>
           {explorerOpen && (
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
