@@ -664,7 +664,7 @@ export function SkillsConfig({
           {/* Left: skill list */}
           <div
             style={{
-              width: 210,
+              width: isMobile ? 140 : 210,
               borderRight: "1px solid var(--border)",
               display: "flex",
               flexDirection: "column",

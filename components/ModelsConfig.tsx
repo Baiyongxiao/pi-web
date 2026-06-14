@@ -1469,7 +1469,7 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
           {/* Left: tree */}
-          <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
+          <div style={{ width: isMobile ? 140 : 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {
