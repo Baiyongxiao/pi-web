@@ -184,17 +184,13 @@ function TreeNode({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 3,
-                  padding: "0 6px",
+                  width: 20,
                   height: 20,
                   background: "var(--bg-panel)",
                   border: "1px solid var(--border)",
                   borderRadius: 4,
                   color: "var(--text-muted)",
                   cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  whiteSpace: "nowrap",
                   transition: "color 0.1s",
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
@@ -205,7 +201,6 @@ function TreeNode({
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-                download
               </button>
             )}
             {/* @mention button */}
@@ -220,24 +215,19 @@ function TreeNode({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 3,
-                  padding: "0 6px",
+                  width: 20,
                   height: 20,
                   background: "var(--bg-panel)",
                   border: "1px solid var(--border)",
                   borderRadius: 4,
                   color: "var(--accent)",
                   cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
                 }}
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="4" />
                   <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
                 </svg>
-                mention
               </button>
             )}
           </div>
