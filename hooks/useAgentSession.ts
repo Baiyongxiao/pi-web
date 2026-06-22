@@ -631,12 +631,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [data?.tree, activeLeafId, handleLeafChange, onBranchDataChange]);
 
   useEffect(() => {
-    if (pendingScrollToUserRef.current) {
-      pendingScrollToUserRef.current = false;
-      initialScrollDoneRef.current = true;
-      scrollUserMsgToTop();
+    if (messages.length > 0) {
+      if (pendingScrollToUserRef.current) {
+        pendingScrollToUserRef.current = false;
+        initialScrollDoneRef.current = true;
+        scrollUserMsgToTop();
+      } else if (!initialScrollDoneRef.current) {
+        initialScrollDoneRef.current = true;
+        scrollToBottom("instant");
+      }
     }
-  }, [messages.length, scrollUserMsgToTop]);
+  }, [messages.length, scrollToBottom, scrollUserMsgToTop]);
 
   // Load model list
   useEffect(() => {
