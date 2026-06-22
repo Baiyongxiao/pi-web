@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
@@ -702,6 +702,17 @@ function TextFileViewer({ filePath, cwd }: Props) {
   const [changeCount, setChangeCount] = useState(0);
   const esRef = useRef<EventSource | null>(null);
 
+  // Compute static preview URL for HTML files (allows relative asset references)
+  const htmlStaticUrl = useMemo(() => {
+    if (!data || data.language !== "html") return null;
+    const workspaceBase = cwd || filePath.substring(0, filePath.lastIndexOf('/'));
+    const relPath = filePath.startsWith(workspaceBase + '/')
+      ? filePath.substring(workspaceBase.length + 1)
+      : filePath.substring(filePath.lastIndexOf('/') + 1);
+    const encodedBase = btoa(workspaceBase).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `/api/static/${encodedBase}/${relPath}`;
+  }, [filePath, cwd, data?.language]);
+
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
     return fetch(`/api/files/${encoded}?type=read`)
@@ -948,8 +959,8 @@ function TextFileViewer({ filePath, cwd }: Props) {
           <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
         ) : isHtml && previewMode ? (
           <iframe
-            srcDoc={data.content}
-            sandbox="allow-scripts"
+            key={htmlStaticUrl}
+            src={htmlStaticUrl!}
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
             title="HTML preview"
           />
