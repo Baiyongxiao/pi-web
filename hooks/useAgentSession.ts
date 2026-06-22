@@ -672,6 +672,42 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearTimeout(t);
   }, [compactError]);
 
+  // Periodic stall detection: poll agent state while streaming.
+  // If the SSE event queue is bottlenecked by large message_update payloads
+  // (e.g., when generating a large file), the agent_end event may take
+  // many seconds to arrive. This check prevents the UI from appearing stuck.
+  const stallCheckTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (agentRunning) {
+      stallCheckTimerRef.current = setInterval(() => {
+        const sid = sessionIdRef.current;
+        if (!sid || !agentRunningRef.current) return;
+        fetch(`/api/agent/${encodeURIComponent(sid)}`)
+          .then((r) => r.json())
+          .then((d: { state?: { isStreaming?: boolean } }) => {
+            if (!d?.state?.isStreaming && agentRunningRef.current) {
+              // Agent stopped but we missed the agent_end event — clean up
+              setAgentRunning(false);
+              setAgentPhase(null);
+              loadSession(sid);
+            }
+          })
+          .catch(() => {});
+      }, 20000);
+      return () => {
+        if (stallCheckTimerRef.current) {
+          clearInterval(stallCheckTimerRef.current);
+          stallCheckTimerRef.current = null;
+        }
+      };
+    } else {
+      if (stallCheckTimerRef.current) {
+        clearInterval(stallCheckTimerRef.current);
+        stallCheckTimerRef.current = null;
+      }
+    }
+  }, [agentRunning, loadSession]);
+
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
