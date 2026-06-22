@@ -746,7 +746,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
     }
 
     fetchContent(filePath).then((d) => {
-      if (d?.language === "markdown") setPreviewMode(true);
+      if (d?.language === "markdown" || d?.language === "html") setPreviewMode(true);
     }).finally(() => setLoading(false));
 
     // Set up SSE watch
@@ -889,26 +889,26 @@ function TextFileViewer({ filePath, cwd }: Props) {
         {isHtml && viewMode === "source" && (
           <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
             <button
-              onClick={() => setPreviewMode(false)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: !previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: !previewMode ? 600 : 400,
-              }}
-            >
-              Code
-            </button>
-            <button
               onClick={() => setPreviewMode(true)}
               style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
+                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
                 background: previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
                 color: previewMode ? "var(--text)" : "var(--text-muted)",
                 fontWeight: previewMode ? 600 : 400,
               }}
             >
               Preview
+            </button>
+            <button
+              onClick={() => setPreviewMode(false)}
+              style={{
+                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
+                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
+                color: !previewMode ? "var(--text)" : "var(--text-muted)",
+                fontWeight: !previewMode ? 600 : 400,
+              }}
+            >
+              Code
             </button>
           </div>
         )}
@@ -936,7 +936,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
                 fontWeight: !previewMode ? 600 : 400,
               }}
             >
-              Raw
+              Code
             </button>
           </div>
         )}
