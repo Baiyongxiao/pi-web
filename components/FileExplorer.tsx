@@ -87,9 +87,9 @@ function TreeNode({
     prevLoadedRef.current = loaded;
   });
 
-  // Re-fetch children when refreshKey changes and the directory is already open/loaded
+  // Re-fetch children when refreshKey changes and the directory is already open
   useEffect(() => {
-    if (open && loaded) {
+    if (open) {
       loadChildren(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

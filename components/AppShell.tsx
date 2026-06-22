@@ -505,11 +505,14 @@ export function AppShell() {
 
             let ctxColor = "var(--text-muted)";
             let ctxStr: string | null = null;
-            if (contextUsage?.contextWindow) {
+            if (contextUsage) {
               const pct = contextUsage.percent;
+              const cw = contextUsage.contextWindow;
               if (pct !== null && pct > 90) ctxColor = "#ef4444";
               else if (pct !== null && pct > 70) ctxColor = "rgba(234,179,8,0.95)";
-              ctxStr = pct !== null ? `${pct.toFixed(0)}% / ${fmt(contextUsage.contextWindow)}` : `? / ${fmt(contextUsage.contextWindow)}`;
+              if (pct !== null && cw > 0) ctxStr = `${pct.toFixed(0)}% / ${fmt(cw)}`;
+              else if (cw > 0) ctxStr = `? / ${fmt(cw)}`;
+              else if (pct !== null) ctxStr = `${pct.toFixed(0)}%`;
             }
 
             const tooltipParts: string[] = [];
@@ -520,9 +523,10 @@ export function AppShell() {
               tooltipParts.push(`cache write: ${t.cacheWrite.toLocaleString()}`);
               if (c > 0) tooltipParts.push(`cost: $${c.toFixed(4)}`);
             }
-            if (contextUsage?.contextWindow) {
+            if (contextUsage) {
               const pct = contextUsage.percent;
-              tooltipParts.push(`context: ${pct !== null ? pct.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
+              const cw = contextUsage.contextWindow;
+              tooltipParts.push(`context: ${pct !== null ? pct.toFixed(1) + "%" : "unknown"} of ${cw > 0 ? cw.toLocaleString() : "?"} tokens`);
             }
             const tooltip = tooltipParts.join("  |  ");
             const padRight = isMobile ? 12 : (rightPanelOpen ? 12 : 48);

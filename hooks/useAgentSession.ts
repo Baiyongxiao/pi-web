@@ -231,12 +231,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (eventSourceRef.current === es && agentRunningRef.current) {
         es.close();
         eventSourceRef.current = null;
-        setTimeout(() => {
-          if (agentRunningRef.current) connectEvents(sid);
-        }, 1000);
+        setTimeout(async () => {
+          if (agentRunningRef.current) {
+            // Check if agent is still streaming before reconnecting
+            try {
+              const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+              const d = await res.json() as { running?: boolean; state?: { isStreaming?: boolean } };
+              if (d?.state?.isStreaming) {
+                connectEvents(sid);
+              } else {
+                // Agent stopped while disconnected — clean up client state
+                setAgentRunning(false);
+                setAgentPhase(null);
+                loadSession(sid);
+              }
+            } catch {
+              // Network error — retry connection
+              if (agentRunningRef.current) connectEvents(sid);
+            }
+          }
+        }, 1500);
       }
     };
-  }, []);
+  }, [loadSession]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
@@ -404,12 +421,30 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    try {
-      await sendAgentCommand(sid, { type: "abort" });
-    } catch (e) {
-      console.error("Failed to abort:", e);
+    // Close SSE immediately to stop UI streaming
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
-  }, []);
+    setAgentRunning(false);
+    setAgentPhase(null);
+    // Send abort with a timeout so it doesn't block the UI
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      await fetch(`/api/agent/${encodeURIComponent(sid)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "abort" }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch {
+      // ignore abort/timeout — client already stopped
+    }
+    // Reload session to get final state after abort
+    try { loadSession(sid); } catch { /* ignore */ }
+  }, [loadSession]);
 
   const handleFork = useCallback(async (entryId: string) => {
     const sid = sessionIdRef.current;
