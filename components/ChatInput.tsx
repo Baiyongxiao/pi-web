@@ -434,7 +434,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               ? "rgba(234,179,8,0.4)"
               : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
             borderRadius: 14,
-            padding: `10px 10px 10px ${isMobile ? 12 : 10}px`,
+            padding: "10px 10px 10px 10px",
             boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
             transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
           } as React.CSSProperties}
@@ -447,7 +447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 title="选择技能"
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  width: isMobile ? 32 : 28, height: 28, padding: 0, marginLeft: -6, marginRight: -4,
+                  width: 28, height: 28, padding: 0, marginLeft: -6, marginRight: -4,
                   background: skillDropdownOpen ? "var(--bg-hover)" : "none",
                   border: "none", borderRadius: 8,
                   color: value.startsWith("/skill:") || skillDropdownOpen ? "var(--accent)" : "var(--text-muted)",
@@ -456,7 +456,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = skillDropdownOpen ? "var(--bg-hover)" : "none"; e.currentTarget.style.color = (value.startsWith("/skill:") || skillDropdownOpen) ? "var(--accent)" : "var(--text-muted)"; }}
               >
-                <svg width={isMobile ? 16 : 13} height={isMobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
                   <path d="M2 12l10 5 10-5" />
