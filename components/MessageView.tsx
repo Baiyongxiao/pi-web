@@ -75,6 +75,17 @@ export function MessageView({ message, isStreaming, toolResults, modelNames, ent
   return null;
 }
 
+// Regex to strip <skill> blocks from displayed message content
+const SKILL_BLOCK_RE = /<skill[^>]*>[\s\S]*?<\/skill>\n*/g;
+
+function parseSkillBlocks(raw: string): { skillNames: string[]; cleanContent: string } {
+  const skillNames: string[] = [];
+  for (const m of raw.matchAll(/<skill[^>]*name="([^"]+)"/gi)) {
+    skillNames.push(m[1]);
+  }
+  return { skillNames, cleanContent: raw.replace(SKILL_BLOCK_RE, "").trimStart() };
+}
+
 function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
   message: UserMessage;
   entryId?: string;
@@ -87,13 +98,16 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const content =
+  const rawContent =
     typeof message.content === "string"
       ? message.content
       : message.content
           .filter((b): b is TextContent => b.type === "text")
           .map((b) => b.text)
           .join("\n");
+
+  const { skillNames, cleanContent } = parseSkillBlocks(rawContent);
+  const hasSkills = skillNames.length > 0;
 
   const imageBlocks: ImageContent[] =
     typeof message.content === "string"
@@ -105,7 +119,7 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   const canNavigate = !!prevAssistantEntryId && !!onNavigate;
 
   const copyContent = () => {
-    copyText(content).then(() => {
+    copyText(cleanContent).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -133,7 +147,7 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
           }}
         >
           {imageBlocks.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: cleanContent ? 8 : 0 }}>
               {imageBlocks.map((img, i) => {
                 // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
                 // pi-ai on-disk format uses flat {data, mimeType} — handle both
@@ -157,7 +171,26 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
               })}
             </div>
           )}
-          {content && <MarkdownBody className="markdown-user-message">{content}</MarkdownBody>}
+          {hasSkills && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: cleanContent ? 6 : 0 }}>
+              {skillNames.map((name) => (
+                <span key={name} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  fontSize: 11, padding: "2px 7px", borderRadius: 5,
+                  background: "rgba(99,102,241,0.10)", color: "rgba(99,102,241,0.85)",
+                  fontWeight: 500,
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+          {cleanContent && <MarkdownBody className="markdown-user-message">{cleanContent}</MarkdownBody>}
         </div>
 
       </div>
@@ -213,7 +246,7 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
             }}>
               {canNavigate && (
                 <button
-                  onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(content); }}
+                  onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(cleanContent); }}
                   title="Edit from here — branches within this session"
                   style={{
                     display: "flex", alignItems: "center", gap: 4,

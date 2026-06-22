@@ -5,6 +5,13 @@ import { normalizeToolCalls } from "./normalize";
 
 export { getAgentDir };
 
+const SKILL_BLOCK_RE = /<skill[^>]*>[\s\S]*?<\/skill>\n*/g;
+
+/** Strip <skill> XML blocks from text for display purposes */
+export function stripSkillBlocks(text: string): string {
+  return text.replace(SKILL_BLOCK_RE, "").trimStart();
+}
+
 export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
@@ -26,7 +33,7 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
-      firstMessage: s.firstMessage || "(no messages)",
+      firstMessage: s.firstMessage ? stripSkillBlocks(s.firstMessage) : "(no messages)",
       parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
     };
   });
