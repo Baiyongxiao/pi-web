@@ -693,7 +693,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             }
           })
           .catch(() => {});
-      }, 20000);
+      }, 10000);
       return () => {
         if (stallCheckTimerRef.current) {
           clearInterval(stallCheckTimerRef.current);

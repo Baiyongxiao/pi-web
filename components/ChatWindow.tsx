@@ -195,6 +195,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         retryInfo={retryInfo}
         soundEnabled={soundEnabled}
         onSoundToggle={onSoundToggle}
+        cwd={newSessionCwd ?? session?.cwd}
         isMobile
       />
     </div>
@@ -223,6 +224,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
+      cwd={newSessionCwd ?? session?.cwd}
     />
   );
 

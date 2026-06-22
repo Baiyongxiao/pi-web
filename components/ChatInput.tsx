@@ -14,6 +14,13 @@ interface ModelOption {
   name: string;
 }
 
+interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+const SKILLS_API_BASE = "http://124.221.10.166/api";
+
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   onAbort: () => void;
@@ -38,6 +45,7 @@ interface Props {
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
   isMobile?: boolean;
+  cwd?: string;
 }
 
 export interface ChatInputHandle {
@@ -68,12 +76,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   retryInfo,
   soundEnabled, onSoundToggle,
   isMobile,
+  cwd,
 }: Props, ref) {
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
+  const [skillDropdownOpen, setSkillDropdownOpen] = useState(false);
+  const [availableSkills, setAvailableSkills] = useState<SkillInfo[]>([]);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -82,8 +93,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const skillDropdownRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
+  const fetchedSkillsRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -257,6 +270,33 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
     : modelOptions.length > 0 ? modelOptions[0].name : null;
 
+  // Fetch available skills — try remote API first, fall back to local
+  useEffect(() => {
+    if (fetchedSkillsRef.current || !cwd) return;
+    fetchedSkillsRef.current = true;
+
+    const loadSkills = (data: { skills?: Array<{ name?: string; description?: string }> }) => {
+      if (data.skills?.length) {
+        setAvailableSkills(
+          data.skills
+            .filter((s): s is SkillInfo => typeof s.name === "string" && s.name.length > 0)
+            .map((s) => ({ name: s.name, description: s.description ?? "" }))
+        );
+      }
+    };
+
+    fetch(`${SKILLS_API_BASE}/skills?cwd=${encodeURIComponent(cwd)}`, { credentials: "include" })
+      .then((res) => res.json())
+      .then(loadSkills)
+      .catch(() => {
+        // Fallback to pi-web's own skills endpoint
+        fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+          .then((res) => res.json())
+          .then(loadSkills)
+          .catch(() => {});
+      });
+  }, [cwd]);
+
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -272,9 +312,45 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
         setThinkingDropdownOpen(false);
       }
+      if (skillDropdownRef.current && !skillDropdownRef.current.contains(e.target as Node)) {
+        setSkillDropdownOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Select a skill — prepend /skill:name to the textarea value
+  const handleSkillSelect = useCallback((name: string) => {
+    setSkillDropdownOpen(false);
+    const prefix = `/skill:${name} `;
+    const ta = textareaRef.current;
+    if (!ta) {
+      setValue((v) => {
+        const skillIdx = v.search(/\/skill:\S+\s/);
+        if (skillIdx === 0) return prefix + v.slice(v.indexOf(" ", skillIdx) + 1);
+        return prefix + v;
+      });
+      return;
+    }
+    const current = ta.value;
+    const skillMatch = current.match(/^\/skill:\S+\s/);
+    if (skillMatch) {
+      const withoutPrefix = current.slice(skillMatch[0].length);
+      setValue(prefix + withoutPrefix);
+      ta.focus();
+      requestAnimationFrame(() => {
+        const pos = prefix.length + withoutPrefix.length;
+        ta.setSelectionRange(pos, pos);
+      });
+    } else {
+      setValue(prefix + current);
+      ta.focus();
+      requestAnimationFrame(() => {
+        const pos = prefix.length + current.length;
+        ta.setSelectionRange(pos, pos);
+      });
+    }
   }, []);
 
 
@@ -358,11 +434,70 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               ? "rgba(234,179,8,0.4)"
               : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
             borderRadius: 14,
-            padding: "10px 10px 10px 14px",
+            padding: `10px 10px 10px ${isMobile ? 12 : 10}px`,
             boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
             transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
           } as React.CSSProperties}
         >
+          {/* Skill selector — only shown when skills are loaded and not streaming */}
+          {availableSkills.length > 0 && !isStreaming && (
+            <div ref={skillDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => setSkillDropdownOpen((v) => !v)}
+                title="选择技能"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: isMobile ? 32 : 28, height: 28, padding: 0, marginLeft: -6, marginRight: -4,
+                  background: skillDropdownOpen ? "var(--bg-hover)" : "none",
+                  border: "none", borderRadius: 8,
+                  color: value.startsWith("/skill:") || skillDropdownOpen ? "var(--accent)" : "var(--text-muted)",
+                  cursor: "pointer", transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = skillDropdownOpen ? "var(--bg-hover)" : "none"; e.currentTarget.style.color = (value.startsWith("/skill:") || skillDropdownOpen) ? "var(--accent)" : "var(--text-muted)"; }}
+              >
+                <svg width={isMobile ? 16 : 13} height={isMobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+              </button>
+              {skillDropdownOpen && (
+                <div style={{
+                  position: "absolute", bottom: "calc(100% + 6px)", left: -4,
+                  zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
+                  borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+                  overflow: "hidden", minWidth: 160,
+                }}>
+                  {availableSkills.map((skill) => {
+                    const isActive = value.startsWith(`/skill:${skill.name}`);
+                    return (
+                      <button
+                        key={skill.name}
+                        onClick={() => handleSkillSelect(skill.name)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          width: "100%", padding: "7px 12px",
+                          background: isActive ? "var(--bg-selected)" : "none",
+                          border: "none",
+                          color: isActive ? "var(--text)" : "var(--text-muted)",
+                          cursor: "pointer", fontSize: 13, textAlign: "left",
+                          fontWeight: isActive ? 600 : 400, whiteSpace: "nowrap",
+                        }}
+                        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
+                      >
+                        {isActive && (
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                        )}
+                        {skill.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={value}
