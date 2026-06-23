@@ -36,7 +36,7 @@ export async function POST(
   }
 }
 
-// GET /api/agent/[id] - Get current agent state
+// GET /api/agent/[id] - Get current agent state (lightweight, no idle-timer reset)
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -49,7 +49,7 @@ export async function GET(
       return NextResponse.json({ running: false });
     }
 
-    const state = await session.send({ type: "get_state" });
+    const state = session.peekState();
     return NextResponse.json({ running: true, state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

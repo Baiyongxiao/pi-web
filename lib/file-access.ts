@@ -6,7 +6,7 @@ declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
 }
 
-const ALLOWED_ROOTS_TTL_MS = 5_000;
+const ALLOWED_ROOTS_TTL_MS = 60_000;
 const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 
 export const IGNORED_NAMES = new Set([

@@ -119,6 +119,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
+  const mountedRef = useRef(true);
   const initialScrollDoneRef = useRef(false);
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToUserRef = useRef(false);
@@ -232,23 +233,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         es.close();
         eventSourceRef.current = null;
         setTimeout(async () => {
-          if (agentRunningRef.current) {
-            // Check if agent is still streaming before reconnecting
-            try {
-              const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
-              const d = await res.json() as { running?: boolean; state?: { isStreaming?: boolean } };
-              if (d?.state?.isStreaming) {
-                connectEvents(sid);
-              } else {
-                // Agent stopped while disconnected — clean up client state
-                setAgentRunning(false);
-                setAgentPhase(null);
-                loadSession(sid);
-              }
-            } catch {
-              // Network error — retry connection
-              if (agentRunningRef.current) connectEvents(sid);
+          // Guard: don't reconnect if component unmounted or agent stopped
+          if (!mountedRef.current || !agentRunningRef.current) return;
+          // Check if agent is still streaming before reconnecting
+          try {
+            const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+            const d = await res.json() as { running?: boolean; state?: { isStreaming?: boolean } };
+            if (!mountedRef.current || !agentRunningRef.current) return;
+            if (d?.state?.isStreaming) {
+              connectEvents(sid);
+            } else {
+              // Agent stopped while disconnected — clean up client state
+              setAgentRunning(false);
+              setAgentPhase(null);
+              loadSession(sid);
             }
+          } catch {
+            // Network error — retry connection
+            if (mountedRef.current && agentRunningRef.current) connectEvents(sid);
           }
         }, 1500);
       }
@@ -443,7 +445,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // ignore abort/timeout — client already stopped
     }
     // Reload session to get final state after abort
-    try { loadSession(sid); } catch { /* ignore */ }
+    if (mountedRef.current) {
+      try { loadSession(sid); } catch { /* ignore */ }
+    }
   }, [loadSession]);
 
   const handleFork = useCallback(async (entryId: string) => {
@@ -615,6 +619,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
     }
     return () => {
+      mountedRef.current = false;
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
     };
@@ -674,12 +679,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // If the SSE event queue is bottlenecked by large message_update payloads
   // (e.g., when generating a large file), the agent_end event may take
   // many seconds to arrive. This check prevents the UI from appearing stuck.
+  //
+  // Safety: polling is capped at 15 minutes total per streaming session to
+  // prevent indefinite server-side session lifetime extension.
+  const STALL_POLL_MAX_DURATION_MS = 15 * 60 * 1000;
   const stallCheckTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartTimeRef = useRef<number>(0);
   useEffect(() => {
     if (agentRunning) {
+      pollStartTimeRef.current = Date.now();
       stallCheckTimerRef.current = setInterval(() => {
         const sid = sessionIdRef.current;
         if (!sid || !agentRunningRef.current) return;
+        // Stop polling if we've exceeded the safety cap
+        if (Date.now() - pollStartTimeRef.current > STALL_POLL_MAX_DURATION_MS) {
+          if (stallCheckTimerRef.current) {
+            clearInterval(stallCheckTimerRef.current);
+            stallCheckTimerRef.current = null;
+          }
+          return;
+        }
         fetch(`/api/agent/${encodeURIComponent(sid)}`)
           .then((r) => r.json())
           .then((d: { state?: { isStreaming?: boolean } }) => {

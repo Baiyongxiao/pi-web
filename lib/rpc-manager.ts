@@ -1,6 +1,6 @@
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath } from "./session-reader";
-import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import type { AgentSessionLike, ModelLike, ToolInfo } from "./pi-types";
 
 // ============================================================================
 // Types
@@ -57,6 +57,33 @@ export class AgentSessionWrapper {
     return () => {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
+    };
+  }
+
+  /** Lightweight state peek — does NOT reset idle timer.
+   *  Used by stall-detection polling so it doesn't prevent session cleanup.
+   *  Returns the same fields as get_state (minus messageCount/pendingMessageCount,
+   *  which are always 0) so callers don't lose data vs. send({type:"get_state"}). */
+  peekState(): {
+    isStreaming: boolean;
+    isCompacting: boolean;
+    autoCompactionEnabled: boolean;
+    autoRetryEnabled: boolean;
+    model: ModelLike | undefined;
+    contextUsage: { percent: number | null; contextWindow: number; tokens: number | null } | null;
+    systemPrompt: string;
+    thinkingLevel: string;
+  } {
+    const cu = this.inner.getContextUsage();
+    return {
+      isStreaming: this.inner.isStreaming,
+      isCompacting: this.inner.isCompacting,
+      autoCompactionEnabled: this.inner.autoCompactionEnabled,
+      autoRetryEnabled: this.inner.autoRetryEnabled,
+      model: this.inner.model,
+      contextUsage: cu ? { percent: cu.percent, contextWindow: cu.contextWindow, tokens: cu.tokens } : null,
+      systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+      thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
     };
   }
 
