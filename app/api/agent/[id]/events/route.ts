@@ -44,7 +44,32 @@ export async function GET(
       // Send initial connected event
       encode({ type: "connected", sessionId: id });
 
+      // ====================================================================
+      // Backpressure-aware event handler
+      //
+      // When the agent generates large content (e.g., writing a big file),
+      // message_update events fire rapidly with growing JSON payloads.
+      // If the client can't read the SSE stream as fast as the server
+      // produces events, the default ReadableStream queue grows unboundedly
+      // (controller.enqueue does NOT block or enforce highWaterMark).
+      // This caused memory to climb >1.5 GB during active streaming.
+      //
+      // Fix: for message_update (the high-frequency, high-volume event),
+      // skip the enqueue when the stream queue is full (desiredSize <= 0).
+      // The next message_update or the final message_end will carry the
+      // complete content, so the client loses no data — it just receives
+      // sparser updates until it catches up.
+      //
+      // Critical state-transition events (message_end, agent_end, etc.)
+      // always enqueue because they happen once per turn and are small.
+      // ====================================================================
       const unsubscribe = session.onEvent((event) => {
+        // Backpressure guard: skip message_update when client is behind
+        if (event.type === "message_update" && controller.desiredSize != null && controller.desiredSize <= 0) {
+          // Client too slow — drop this update. The next one or
+          // message_end will bring the client up to date.
+          return;
+        }
         encode(event);
       });
 
