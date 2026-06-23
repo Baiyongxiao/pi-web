@@ -294,22 +294,7 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 
 /** Debug introspection: registry size + per-session listener counts.
  *  Used to diagnose SSE listener leaks. */
-export function debugSessionRegistry(): {
-  registrySize: number;
-  sessionIds: string[];
-  listenerCounts: Record<string, number>;
-} {
-  const reg = getRegistry();
-  const listenerCounts: Record<string, number> = {};
-  for (const [id, w] of reg) {
-    listenerCounts[id] = (w as unknown as { listeners: unknown[] }).listeners.length;
-  }
-  return {
-    registrySize: reg.size,
-    sessionIds: Array.from(reg.keys()),
-    listenerCounts,
-  };
-}
+
 
 /**
  * Get or create an AgentSession for the given session.
