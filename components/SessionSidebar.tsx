@@ -208,6 +208,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [customPathValue, setCustomPathValue] = useState("");
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
+  const [customPathMissingCwd, setCustomPathMissingCwd] = useState<string | null>(null);
+  const [customPathCreating, setCustomPathCreating] = useState(false);
   const customPathInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -377,27 +379,71 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
     setCustomPathValidating(true);
     setCustomPathError(null);
+    setCustomPathMissingCwd(null);
     try {
+      const currentDir = selectedCwd ?? selectedCwdProp ?? undefined;
       const res = await fetch("/api/cwd/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: path }),
+        body: JSON.stringify({ cwd: path, currentCwd: currentDir }),
       });
-      const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
-      if (!res.ok || data.error) {
-        setCustomPathError(data.error ?? `HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({})) as { exists?: boolean; cwd?: string; error?: string };
+      if (!res.ok && data.error) {
+        setCustomPathError(data.error);
         return;
       }
-      setSelectedCwd(data.cwd ?? path);
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-      setDropdownOpen(false);
+      if (data.error) {
+        setCustomPathError(data.error);
+        return;
+      }
+      if (data.exists) {
+        // Directory exists — switch to it
+        setSelectedCwd(data.cwd!);
+        setCustomPathOpen(false);
+        setCustomPathValue("");
+        setDropdownOpen(false);
+      } else {
+        // Directory doesn't exist — ask user if they want to create it
+        setCustomPathMissingCwd(data.cwd ?? path);
+      }
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating]);
+  }, [customPathValue, customPathValidating, selectedCwd, selectedCwdProp]);
+
+  const handleCreateDirectory = useCallback(async () => {
+    const cwd = customPathMissingCwd;
+    if (!cwd || customPathCreating) return;
+
+    setCustomPathCreating(true);
+    setCustomPathError(null);
+    try {
+      const currentDir = selectedCwd ?? selectedCwdProp ?? undefined;
+      const res = await fetch("/api/cwd/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, currentCwd: currentDir }),
+      });
+      const data = await res.json().catch(() => ({})) as { success?: boolean; cwd?: string; error?: string };
+      if (!res.ok || data.error) {
+        setCustomPathError(data.error ?? `HTTP ${res.status}`);
+        setCustomPathMissingCwd(null);
+        return;
+      }
+      setSelectedCwd(data.cwd ?? cwd);
+      setCustomPathMissingCwd(null);
+      setCustomPathOpen(false);
+      setCustomPathValue("");
+      setDropdownOpen(false);
+    } catch (e) {
+      setCustomPathError(e instanceof Error ? e.message : String(e));
+      setCustomPathMissingCwd(null);
+    } finally {
+      setCustomPathCreating(false);
+    }
+  }, [customPathMissingCwd, customPathCreating, selectedCwd, selectedCwdProp]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -408,6 +454,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setCustomPathOpen(false);
         setCustomPathValue("");
         setCustomPathError(null);
+        setCustomPathMissingCwd(null);
         setDropdownOpen(false);
       }
     } catch {
@@ -423,6 +470,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setCustomPathOpen(false);
         setCustomPathValue("");
         setCustomPathError(null);
+        setCustomPathMissingCwd(null);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -598,6 +646,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     setCustomPathOpen(false);
                     setCustomPathValue("");
                     setCustomPathError(null);
+                    setCustomPathMissingCwd(null);
                     setDropdownOpen(false);
                   }}
                   style={{
@@ -663,6 +712,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     e.stopPropagation();
                     setCustomPathOpen(true);
                     setCustomPathError(null);
+                    setCustomPathMissingCwd(null);
                     setTimeout(() => customPathInputRef.current?.focus(), 0);
                   }}
                   style={{
@@ -693,6 +743,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     onChange={(e) => {
                       setCustomPathValue(e.target.value);
                       setCustomPathError(null);
+                      setCustomPathMissingCwd(null);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
@@ -703,6 +754,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         setCustomPathOpen(false);
                         setCustomPathValue("");
                         setCustomPathError(null);
+                        setCustomPathMissingCwd(null);
                       }
                     }}
                     placeholder="/path/to/project"
@@ -719,52 +771,111 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       boxSizing: "border-box",
                     }}
                   />
-                  {customPathError && (
-                    <div style={{
-                      marginTop: 5,
-                      color: "#dc2626",
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      overflowWrap: "anywhere",
-                    }}>
-                      {customPathError}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-                    <button
-                      onClick={() => void commitCustomPath()}
-                      disabled={customPathValidating || !customPathValue.trim()}
-                      style={{
-                        flex: 1,
-                        padding: "4px 0",
-                        background: "var(--accent)",
-                        border: "none",
-                        borderRadius: 5,
-                        color: "#fff",
+                  {customPathMissingCwd ? (
+                    <div style={{ marginTop: 5 }}>
+                      <div style={{
                         fontSize: 11,
-                        fontWeight: 600,
-                        cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
-                        opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
-                      }}
-                    >
-                      {customPathValidating ? "Checking…" : "Open"}
-                    </button>
-                    <button
-                      onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setCustomPathError(null); }}
-                      style={{
-                        flex: 1,
-                        padding: "4px 0",
-                        background: "var(--bg-hover)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 5,
+                        lineHeight: 1.4,
                         color: "var(--text-muted)",
-                        fontSize: 11,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                        overflowWrap: "anywhere",
+                      }}>
+                        Directory <code style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11,
+                          background: "var(--bg-hover)",
+                          padding: "1px 4px",
+                          borderRadius: 3,
+                        }}>{customPathMissingCwd}</code> does not exist. Create it?
+                      </div>
+                      <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+                        <button
+                          onClick={() => void handleCreateDirectory()}
+                          disabled={customPathCreating}
+                          style={{
+                            flex: 1,
+                            padding: "4px 0",
+                            background: "var(--accent)",
+                            border: "none",
+                            borderRadius: 5,
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: customPathCreating ? "not-allowed" : "pointer",
+                            opacity: customPathCreating ? 0.65 : 1,
+                          }}
+                        >
+                          {customPathCreating ? "Creating…" : "Create Directory"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCustomPathMissingCwd(null);
+                            setCustomPathError(null);
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: "4px 0",
+                            background: "var(--bg-hover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 5,
+                            color: "var(--text-muted)",
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {customPathError && (
+                        <div style={{
+                          marginTop: 5,
+                          color: "#dc2626",
+                          fontSize: 11,
+                          lineHeight: 1.35,
+                          overflowWrap: "anywhere",
+                        }}>
+                          {customPathError}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+                        <button
+                          onClick={() => void commitCustomPath()}
+                          disabled={customPathValidating || !customPathValue.trim()}
+                          style={{
+                            flex: 1,
+                            padding: "4px 0",
+                            background: "var(--accent)",
+                            border: "none",
+                            borderRadius: 5,
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
+                            opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
+                          }}
+                        >
+                          {customPathValidating ? "Checking…" : "Open"}
+                        </button>
+                        <button
+                          onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setCustomPathError(null); setCustomPathMissingCwd(null); }}
+                          style={{
+                            flex: 1,
+                            padding: "4px 0",
+                            background: "var(--bg-hover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 5,
+                            color: "var(--text-muted)",
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
