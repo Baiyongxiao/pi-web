@@ -5,9 +5,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useTheme } from "@/hooks/useTheme";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
 
 interface Props {
   filePath: string;
@@ -896,60 +896,36 @@ function TextFileViewer({ filePath, cwd }: Props) {
           </button>
         )}
 
-        {/* HTML source/preview toggle */}
+        {/* HTML source/preview toggle — single button on mobile */}
         {isHtml && viewMode === "source" && (
-          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setPreviewMode(true)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: previewMode ? 600 : 400,
-              }}
-            >
-              Preview
-            </button>
-            <button
-              onClick={() => setPreviewMode(false)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
-                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: !previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: !previewMode ? 600 : 400,
-              }}
-            >
-              Code
-            </button>
-          </div>
+          <button
+            onClick={() => setPreviewMode((v) => !v)}
+            style={{
+              padding: "2px 8px", fontSize: 11, cursor: "pointer",
+              background: "var(--bg-hover)",
+              color: "var(--text)",
+              border: "1px solid var(--border)", borderRadius: 5,
+              fontWeight: 600,
+            }}
+          >
+            {previewMode ? "Code" : "Preview"}
+          </button>
         )}
 
-        {/* Markdown preview/raw toggle */}
+        {/* Markdown preview/raw toggle — single button on mobile */}
         {isMarkdown && viewMode === "source" && (
-          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setPreviewMode(true)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: previewMode ? 600 : 400,
-              }}
-            >
-              Preview
-            </button>
-            <button
-              onClick={() => setPreviewMode(false)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
-                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: !previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: !previewMode ? 600 : 400,
-              }}
-            >
-              Code
-            </button>
-          </div>
+          <button
+            onClick={() => setPreviewMode((v) => !v)}
+            style={{
+              padding: "2px 8px", fontSize: 11, cursor: "pointer",
+              background: "var(--bg-hover)",
+              color: "var(--text)",
+              border: "1px solid var(--border)", borderRadius: 5,
+              fontWeight: 600,
+            }}
+          >
+            {previewMode ? "Code" : "Preview"}
+          </button>
         )}
       </div>
 
@@ -969,7 +945,12 @@ function TextFileViewer({ filePath, cwd }: Props) {
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={markdownPreviewRemarkPlugins}
+              rehypePlugins={markdownPreviewRehypePlugins}
+            >
+              {data.content}
+            </ReactMarkdown>
           </div>
         ) : (
           <SyntaxHighlighter

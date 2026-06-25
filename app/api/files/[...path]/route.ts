@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getAllowedRoots, isPathAllowed, IGNORED_NAMES, IGNORED_SUFFIXES } from "@/lib/file-access";
+import { getAllowedRoots, isPathAllowed, IGNORED_NAMES, IGNORED_SUFFIXES, normalizeSlashes, isWindowsAbsolutePath } from "@/lib/file-access";
 
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
@@ -81,10 +81,9 @@ function getLanguage(filePath: string): string {
 
 function filePathFromSegments(segments: string[]): string {
   const joined = segments.join("/");
-  const slashJoined = joined.replace(/\\/g, "/");
-  const isWinAbs = /^[a-zA-Z]:[\/]/.test(slashJoined) || slashJoined.startsWith("\\") || slashJoined.startsWith("//");
-  if (isWinAbs) return slashJoined;
-  return "/" + joined.replace(/^\/+/g, "");
+  const slashJoined = normalizeSlashes(joined);
+  if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
+  return "/" + joined.replace(/^\/+/, "");
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
