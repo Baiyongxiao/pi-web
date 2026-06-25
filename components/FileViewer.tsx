@@ -937,6 +937,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
           <iframe
             key={htmlStaticUrl}
             src={htmlStaticUrl!}
+            sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
             title="HTML preview"
           />

@@ -324,15 +324,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setUploadDone(true);
         if (uploadDoneTimerRef.current) clearTimeout(uploadDoneTimerRef.current);
         uploadDoneTimerRef.current = setTimeout(() => setUploadDone(false), 2000);
+      } else {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        console.error("Upload failed:", data.error ?? `HTTP ${res.status}`);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("Upload error:", e);
     } finally {
       setUploading(false);
       // Reset file input
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }, [selectedCwdProp, selectedCwd, uploadDir]);
+
+  // Clean up uploadDoneTimerRef on unmount
+  useEffect(() => {
+    return () => {
+      if (uploadDoneTimerRef.current) clearTimeout(uploadDoneTimerRef.current);
+    };
+  }, []);
 
   // Close upload dir dropdown on outside click
   useEffect(() => {
@@ -396,13 +406,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setCustomPathError(data.error);
         return;
       }
-      if (data.exists) {
+      if (res.ok && data.exists) {
         // Directory exists — switch to it
         setSelectedCwd(data.cwd!);
         setCustomPathOpen(false);
         setCustomPathValue("");
         setDropdownOpen(false);
-      } else {
+      } else if (res.ok) {
         // Directory doesn't exist — ask user if they want to create it
         setCustomPathMissingCwd(data.cwd ?? path);
       }
@@ -429,7 +439,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const data = await res.json().catch(() => ({})) as { success?: boolean; cwd?: string; error?: string };
       if (!res.ok || data.error) {
         setCustomPathError(data.error ?? `HTTP ${res.status}`);
-        setCustomPathMissingCwd(null);
+        // Don't clear customPathMissingCwd on failure so user can retry
         return;
       }
       setSelectedCwd(data.cwd ?? cwd);
@@ -439,7 +449,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setDropdownOpen(false);
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
-      setCustomPathMissingCwd(null);
+      // Don't clear customPathMissingCwd on failure so user can retry
     } finally {
       setCustomPathCreating(false);
     }

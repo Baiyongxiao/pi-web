@@ -83,8 +83,8 @@ function TreeNode({
       const entries = await fetchEntries(node.fullPath);
       setChildren(entries);
       setLoaded(true);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("Failed to load directory children:", e);
     } finally {
       setLoading(false);
     }

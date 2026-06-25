@@ -11,10 +11,19 @@ declare global {
 const ALLOWED_ROOTS_TTL_MS = 5_000;
 const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 
+export function normalizeCwd(cwd: string, currentCwd?: string): string {
+  if (cwd === "~") return homedir();
+  if (cwd.startsWith("~/")) return path.resolve(homedir(), cwd.slice(2));
+  if (path.isAbsolute(cwd)) return cwd;
+  // Relative path — resolve against the user's current cwd if provided
+  if (currentCwd) return path.resolve(currentCwd, cwd);
+  return path.resolve(cwd);
+}
+
 export const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
   ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
-  "target", "vendor", ".DS_Store", ".git",
+  "target", "vendor", ".DS_Store",
 ]);
 
 export const IGNORED_SUFFIXES = [".pyc"];
@@ -27,12 +36,7 @@ export function isWindowsAbsolutePath(filePath: string): boolean {
   return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
 }
 
-function filePathFromSegments(segments: string[]): string {
-  const joined = segments.join("/");
-  const slashJoined = normalizeSlashes(joined);
-  if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
-  return "/" + joined.replace(/^\/+/, "");
-}
+
 
 function getAdditionalAllowedRoots(): Set<string> {
   if (!globalThis.__piAdditionalAllowedRoots) {

@@ -273,6 +273,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // Check if agent is still streaming before reconnecting
           try {
             const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const d = await res.json() as { running?: boolean; state?: { isStreaming?: boolean } };
             if (!mountedRef.current || !agentRunningRef.current) return;
             if (d?.state?.isStreaming) {
@@ -313,8 +314,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (sessionIdRef.current) {
           loadSession(sessionIdRef.current);
           fetch(`/api/agent/${encodeURIComponent(sessionIdRef.current)}`)
-            .then((r) => r.json())
-            .then((d: { state?: { contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string } }) => {
+            .then((r) => {
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              return r.json() as Promise<{ state?: { contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string } }>;
+            })
+            .then((d) => {
               if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
             })
@@ -662,6 +666,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   // Load session on mount
   useEffect(() => {
+    mountedRef.current = true;
     if (session) {
       sessionIdRef.current = session.id;
       loadSession(session.id, true, true).then((agentState) => {
@@ -794,8 +799,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           return;
         }
         fetch(`/api/agent/${encodeURIComponent(sid)}`)
-          .then((r) => r.json())
-          .then((d: { state?: { isStreaming?: boolean } }) => {
+          .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json() as Promise<{ state?: { isStreaming?: boolean } }>;
+          })
+          .then((d) => {
             if (!d?.state?.isStreaming && agentRunningRef.current) {
               // Agent stopped but we missed the agent_end event — clean up
               setAgentRunning(false);

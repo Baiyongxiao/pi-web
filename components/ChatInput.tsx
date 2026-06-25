@@ -20,7 +20,7 @@ interface SkillInfo {
   description: string;
 }
 
-const SKILLS_API_BASE = "http://124.221.10.166/api";
+const SKILLS_API_BASE = process.env.NEXT_PUBLIC_SKILLS_API || "http://124.221.10.166/api";
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
@@ -297,6 +297,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? `${compactVerb} ${formatTokenCount(compactResult.tokensBefore)} -> ${formatTokenCount(compactResult.estimatedTokensAfter)} tokens (${formatTokenCount(compactSavedTokens)} saved)`
     : null;
 
+  // Reset fetched flag when cwd changes
+  useEffect(() => {
+    fetchedSkillsRef.current = false;
+  }, [cwd]);
+
   // Fetch available skills — try remote API first, fall back to local
   useEffect(() => {
     if (fetchedSkillsRef.current || !cwd) return;
@@ -315,12 +320,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     fetch(`${SKILLS_API_BASE}/skills?cwd=${encodeURIComponent(cwd)}`, { credentials: "include" })
       .then((res) => res.json())
       .then(loadSkills)
-      .catch(() => {
+      .catch((err) => {
+        console.error("Remote skills API failed:", err);
         // Fallback to pi-web's own skills endpoint
         fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
           .then((res) => res.json())
           .then(loadSkills)
-          .catch(() => {});
+          .catch((err2) => {
+            console.error("Local skills API also failed:", err2);
+          });
       });
   }, [cwd]);
 

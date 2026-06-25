@@ -1,17 +1,6 @@
 import { NextResponse } from "next/server";
 import { mkdirSync } from "fs";
-import { homedir } from "os";
-import { isAbsolute, resolve } from "path";
-import { allowFileRoot } from "@/lib/file-access";
-
-function normalizeCwd(cwd: string, currentCwd?: string): string {
-  if (cwd === "~") return homedir();
-  if (cwd.startsWith("~/")) return resolve(homedir(), cwd.slice(2));
-  if (isAbsolute(cwd)) return cwd;
-  // Relative path — resolve against the user's current cwd if provided
-  if (currentCwd) return resolve(currentCwd, cwd);
-  return resolve(cwd);
-}
+import { allowFileRoot, normalizeCwd } from "@/lib/file-access";
 
 // POST /api/cwd/create  body: { cwd: string, currentCwd?: string }
 // Creates a directory and registers it as a file root, so the UI can switch to it.

@@ -93,8 +93,13 @@ export async function GET(
       return NextResponse.json({ error: "Workspace path must be absolute" }, { status: 400 });
     }
 
-    // Normalize the workspace path
-    const normWorkspace = path.resolve(workspaceDir);
+    // Resolve symlinks in the workspace path to prevent symlink traversal
+    let normWorkspace: string;
+    try {
+      normWorkspace = fs.realpathSync(workspaceDir);
+    } catch {
+      return NextResponse.json({ error: "Workspace not accessible" }, { status: 403 });
+    }
 
     // Security: check against allowed roots
     const allowedRoots = await getAllowedRoots();
@@ -119,15 +124,41 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Check file exists
+    // Check file exists (async)
     try {
-      const stat = fs.statSync(fullPath);
+      const stat = await fs.promises.stat(fullPath);
       if (!stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 404 });
       }
 
-      // Serve the file
-      const content = fs.readFileSync(fullPath);
+      // Serve the file (async read, with 10 MB limit for memory safety)
+      if (stat.size > 10 * 1024 * 1024) {
+        // For large files, convert Node.js stream to Web ReadableStream
+        const nodeStream = fs.createReadStream(fullPath);
+        const mimeType = getMimeType(fullPath);
+        // Convert Node.js Readable to Web ReadableStream for NextResponse compatibility
+        const webStream = new ReadableStream({
+          start(controller) {
+            nodeStream.on("data", (chunk: Buffer) => controller.enqueue(chunk));
+            nodeStream.on("end", () => controller.close());
+            nodeStream.on("error", (err) => {
+              console.error("Stream error serving", fullPath, err);
+              controller.error(err);
+            });
+          },
+        });
+        return new NextResponse(webStream, {
+          status: 200,
+          headers: {
+            "Content-Type": mimeType,
+            "Content-Length": String(stat.size),
+            "Cache-Control": "public, max-age=10",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+
+      const content = await fs.promises.readFile(fullPath);
       const mimeType = getMimeType(fullPath);
 
       return new NextResponse(content, {
@@ -136,12 +167,14 @@ export async function GET(
           "Content-Type": mimeType,
           "Content-Length": String(stat.size),
           "Cache-Control": "public, max-age=10",
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error("Static file serve error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

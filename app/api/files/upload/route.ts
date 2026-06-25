@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { getAllowedRoots, isPathAllowed, IGNORED_NAMES, IGNORED_SUFFIXES } from "@/lib/file-access";
 
+const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100 MB
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -13,18 +15,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
-    // Validate and resolve target directory
-    const allowedRoots = await getAllowedRoots();
-    if (!isPathAllowed(rawTargetDir, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied: target directory not allowed" }, { status: 403 });
-    }
-
-    // Ensure target directory exists
+    // Check target exists and resolve symlinks (to prevent symlink traversal)
     if (!fs.existsSync(rawTargetDir)) {
       return NextResponse.json({ error: "Target directory does not exist" }, { status: 404 });
     }
+    const targetDir = fs.realpathSync(rawTargetDir);
 
-    const targetStat = fs.statSync(rawTargetDir);
+    // Security check on resolved real path
+    const allowedRoots = await getAllowedRoots();
+    if (!isPathAllowed(targetDir, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied: target directory not allowed" }, { status: 403 });
+    }
+
+    const targetStat = fs.statSync(targetDir);
     if (!targetStat.isDirectory()) {
       return NextResponse.json({ error: "Target is not a directory" }, { status: 400 });
     }
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const destPath = path.join(rawTargetDir, safeName);
+      const destPath = path.join(targetDir, safeName);
 
       // Don't overwrite directories
       if (fs.existsSync(destPath)) {
@@ -60,12 +63,20 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Check file size before reading into memory
+      if (file.size > MAX_UPLOAD_SIZE) {
+        errors.push(`${safeName}: file exceeds maximum upload size (${MAX_UPLOAD_SIZE / (1024 * 1024)} MB)`);
+        continue;
+      }
+
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
-        fs.writeFileSync(destPath, buffer);
+        await fs.promises.writeFile(destPath, buffer);
         saved.push(safeName);
       } catch (err) {
-        errors.push(`${safeName}: ${err instanceof Error ? err.message : String(err)}`);
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        errors.push(`${safeName}: ${msg}`);
+        console.error(`Upload error for ${destPath}:`, err);
       }
     }
 
@@ -78,6 +89,7 @@ export async function POST(request: NextRequest) {
       targetDir: rawTargetDir,
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error("Upload failed:", error);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }
