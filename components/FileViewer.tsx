@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Component, ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
@@ -8,6 +8,9 @@ import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
+import DocxViewer from "./DocxViewer";
+import XlsxViewer from "./XlsxViewer";
+import PdfViewer from "./PdfViewer";
 
 interface Props {
   filePath: string;
@@ -22,8 +25,14 @@ interface FileData {
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"]);
 const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba", "webm"]);
-const DOCUMENT_PREVIEW_EXTS = new Set(["pdf", "docx"]);
-const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+// PDFs (native and LibreOffice-converted) are rendered client-side via
+// pdfjs-dist on a canvas (PdfViewer). pptx/ppt/doc are converted to PDF
+// server-side via LibreOffice (type=office-pdf) and shown through PdfViewer.
+const DOCUMENT_PREVIEW_EXTS = new Set(["pdf", "pptx", "ppt", "doc"]);
+// docx is rendered client-side by docx-preview; xlsx/xls by SheetJS.
+const DOCX_EXTS = new Set(["docx"]);
+const XLSX_EXTS = new Set(["xlsx", "xls"]);
+const OFFICE_PDF_EXTS = new Set(["pptx", "ppt", "doc"]);
 
 function isImagePath(filePath: string): boolean {
   const base = getFileName(filePath);
@@ -43,6 +52,12 @@ function getFileExt(filePath: string): string {
 
 function isDocumentPreviewPath(filePath: string): boolean {
   return DOCUMENT_PREVIEW_EXTS.has(getFileExt(filePath));
+}
+function isDocxPath(filePath: string): boolean {
+  return DOCX_EXTS.has(getFileExt(filePath));
+}
+function isXlsxPath(filePath: string): boolean {
+  return XLSX_EXTS.has(getFileExt(filePath));
 }
 
 function DownloadLink({ filePath, label = "Download" }: { filePath: string; label?: string }) {
@@ -555,7 +570,6 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
 }
 
 function DocumentViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
-  const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -564,15 +578,17 @@ function DocumentViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   const ext = getFileExt(filePath);
   const encoded = encodeFilePathForApi(filePath);
   const isPdf = ext === "pdf";
-  const previewUrl = isPdf
+  const isOfficePdf = OFFICE_PDF_EXTS.has(ext);
+  const label = isPdf ? "pdf" : ext;
+  // PDF: stream the file directly. Office docs: convert to PDF server-side.
+  const pdfUrl = isPdf
     ? `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`
-    : `/api/files/${encoded}?type=preview${bust ? `&v=${bust}` : ""}`;
+    : `/api/files/${encoded}?type=office-pdf${bust ? `&v=${bust}` : ""}`;
 
   useEffect(() => {
     setBust(0);
     setSize(null);
     setError(null);
-    setWatching(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -585,8 +601,8 @@ function DocumentViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
         if (d.error) setError(d.error);
         if (typeof d.size === "number") {
           setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
+          if (isOfficePdf && d.size > 50 * 1024 * 1024) {
+            setError("File too large for preview (>50MB)");
           }
         }
       })
@@ -595,14 +611,14 @@ function DocumentViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     const es = new EventSource(`/api/files/${encoded}?type=watch`);
     esRef.current = es;
 
-    es.addEventListener("connected", () => setWatching(true));
+    es.addEventListener("connected", () => { /* live */ });
     es.addEventListener("change", (e) => {
       try {
         const d = JSON.parse((e as MessageEvent).data) as { size?: number };
         if (typeof d.size === "number") {
           setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
+          if (isOfficePdf && d.size > 50 * 1024 * 1024) {
+            setError("File too large for preview (>50MB)");
             return;
           }
         }
@@ -610,78 +626,131 @@ function DocumentViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       setError(null);
       setBust((b) => b + 1);
     });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
+    es.addEventListener("error", () => {
+      // eslint-disable-next-line no-console
+      console.warn("[FileViewer] EventSource error:", filePath);
+    });
+    es.onerror = () => {
+      // eslint-disable-next-line no-console
+      console.warn("[FileViewer] EventSource onerror:", filePath);
+    };
 
     return () => {
       es.close();
       esRef.current = null;
     };
-  }, [encoded, isPdf]);
+  }, [encoded, isOfficePdf]);
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          background: "var(--bg)",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext === "docx" ? "docx preview" : "pdf"}</span>
-        {size != null && <span>{formatSize(size)}</span>}
-        <DownloadLink filePath={filePath} />
-        <span
-          title={watching ? "Live sync active" : "Not watching"}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
+  if (error) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "4px 16px",
+            borderBottom: "1px solid var(--border)",
+            fontSize: 11,
+            color: "var(--text-dim)",
+            background: "var(--bg)",
+            flexShrink: 0,
+          }}
         >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
+          <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+            {getRelativeFilePath(filePath, cwd)}
+          </span>
+          <span style={{ marginLeft: "auto" }}>{label}</span>
+          {size != null && <span>{formatSize(size)}</span>}
+          <DownloadLink filePath={filePath} />
+        </div>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
+          {error}
+        </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, background: "var(--bg-panel)" }}>
-        {error ? (
-          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
-            {error}
-          </div>
-        ) : (
-          <iframe
-            key={previewUrl}
-            src={previewUrl}
-            sandbox={isPdf ? undefined : ""}
-            title={`Preview ${getFileName(filePath)}`}
-            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--bg)" : "#eef1f5" }}
-          />
-        )}
-      </div>
-    </div>
+    );
+  }
+
+  // Render PDFs (native or LibreOffice-converted) on a canvas via pdf.js so
+  // behavior is identical across browsers — no dependency on the browser's
+  // built-in PDF viewer, which often downloads instead of inlining.
+  return (
+    <PdfViewer
+      key={pdfUrl}
+      filePath={filePath}
+      cwd={cwd}
+      pdfUrl={pdfUrl}
+      label={label}
+      allowDownload
+    />
   );
 }
 
+class ViewerErrorBoundary extends Component<
+  { filePath: string; children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error("FileViewer crashed:", error, errorInfo.componentStack);
+  }
+  componentDidUpdate(prev: { filePath: string }) {
+    if (prev.filePath !== this.props.filePath && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            color: "#f87171",
+            fontSize: 13,
+            textAlign: "center",
+            gap: 8,
+          }}
+        >
+          <div>Preview crashed</div>
+          <div style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+            {this.state.error.message}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function FileViewer({ filePath, cwd }: Props) {
+  return (
+    <ViewerErrorBoundary filePath={filePath}>
+      {renderViewer(filePath, cwd)}
+    </ViewerErrorBoundary>
+  );
+}
+
+function renderViewer(filePath: string, cwd?: string) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} />;
   }
   if (isAudioPath(filePath)) {
     return <AudioViewer filePath={filePath} cwd={cwd} />;
+  }
+  if (isDocxPath(filePath)) {
+    return <DocxViewer filePath={filePath} cwd={cwd} />;
+  }
+  if (isXlsxPath(filePath)) {
+    return <XlsxViewer filePath={filePath} cwd={cwd} />;
   }
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} />;
