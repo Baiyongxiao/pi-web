@@ -532,10 +532,11 @@ export function AppShell() {
               tooltipParts.push(`context: ${pct !== null ? pct.toFixed(1) + "%" : "unknown"} of ${cw > 0 ? cw.toLocaleString() : "?"} tokens`);
             }
             const tooltip = tooltipParts.join("  |  ");
-            const padRight = isMobile ? 12 : (rightPanelOpen ? 12 : 48);
+            const padRight = rightPanelOpen ? 12 : 48;
             return (
               <div
                 title={tooltip}
+                className={isMobile ? "hide-scrollbar" : undefined}
                 style={{
                   marginLeft: isMobile ? 0 : "auto",
                   display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
@@ -545,8 +546,11 @@ export function AppShell() {
                   fontSize: isMobile ? 10 : 11, color: "var(--text-muted)",
                   whiteSpace: "nowrap", cursor: "default",
                   fontVariantNumeric: "tabular-nums",
-                  overflow: "hidden",
-                  flexShrink: 0,
+                  overflowX: isMobile ? "auto" : "hidden",
+                  overflowY: "hidden",
+                  flex: isMobile ? "1 1 auto" : "0 0 auto",
+                  minWidth: isMobile ? 0 : undefined,
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
                 {t && t.input > 0 && (
