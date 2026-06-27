@@ -202,3 +202,9 @@ export interface RpcSessionState {
   sessionName?: string;
   messageCount: number;
 }
+
+// Tool introspection removed. Plan/Act mode is the user-facing concept now;
+// the internal get_tools command was deleted along with the old preset system.
+
+/** Agent mode: Plan = read-only investigation, Act = full execution. */
+export type AgentMode = "plan" | "act";

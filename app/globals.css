@@ -27,12 +27,17 @@
   --text: #1a1a1a;
   --text-muted: #6b7280;
   --text-dim: #9ca3af;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  --accent: #5b9aff;
+  --accent-hover: #4a8aff;
   --user-bg: #eff6ff;
   --assistant-bg: #ffffff;
   --tool-bg: #f9fafb;
   --bg-subtle: rgba(0,0,0,0.03);
+  --plan-border: rgba(234,179,8,0.45);
+  --plan-bg: rgba(234,179,8,0.16);
+  --plan-text: rgba(180,130,0,1);
+  --plan-btn-bg: rgba(180,130,0,0.14);
+  --plan-btn-bg-hover: rgba(180,130,0,0.24);
 }
 
 html.dark {
@@ -50,6 +55,11 @@ html.dark {
   --assistant-bg: #1a1a1a;
   --tool-bg: #1f2937;
   --bg-subtle: rgba(255,255,255,0.04);
+  --plan-border: rgba(253,230,138,0.40);
+  --plan-bg: rgba(253,230,138,0.10);
+  --plan-text: #fbbf24;
+  --plan-btn-bg: rgba(251,191,36,0.14);
+  --plan-btn-bg-hover: rgba(251,191,36,0.24);
 }
 
 /* Theme toggle: circular wipe via View Transitions API.

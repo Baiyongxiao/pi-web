@@ -95,7 +95,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const isMobile = useIsMobile();
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, mode, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     isAutoModelSelection,
@@ -105,7 +105,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
+    handleModeChange, handleThinkingLevelChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
@@ -187,8 +187,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         onAbortCompaction={handleAbortCompaction}
         isCompacting={isCompacting}
         compactError={compactError}
-        toolPreset={toolPreset}
-        onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+        mode={mode}
+        onModeChange={session || isNew ? handleModeChange : undefined}
         thinkingLevel={thinkingLevel}
         onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
         availableThinkingLevels={availableThinkingLevels}
@@ -218,8 +218,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       isCompacting={isCompacting}
       compactError={compactError}
       compactResult={compactResult}
-      toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+      mode={mode}
+      onModeChange={session || isNew ? handleModeChange : undefined}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
@@ -334,6 +334,48 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       ) : (
       <>
+      {mode === "plan" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexShrink: 0,
+            padding: "5px 14px",
+            background: "var(--plan-bg)",
+            borderBottom: "1px solid var(--plan-border)",
+            fontSize: 12,
+            color: "var(--plan-text)",
+          }}
+        >
+          <svg width={12} height={12} viewBox="0 0 10 10" fill="currentColor" stroke="none" style={{ flexShrink: 0 }}>
+            <rect x="2" y="1.5" width="2" height="7" rx="0.6" />
+            <rect x="6" y="1.5" width="2" height="7" rx="0.6" />
+          </svg>
+          <span style={{ fontWeight: 600 }}>Plan mode — read only.</span>
+          <span style={{ color: "var(--text-muted)" }}>调研与产出方案，不会修改文件。</span>
+          <button
+            onClick={() => handleModeChange("act")}
+            style={{
+              marginLeft: "auto",
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "3px 10px",
+              background: "var(--plan-btn-bg)",
+              border: "1px solid var(--plan-border)",
+              borderRadius: 6,
+              color: "var(--plan-text)",
+              fontSize: 11, fontWeight: 600,
+              cursor: "pointer",
+              transition: "background 0.12s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--plan-btn-bg-hover)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--plan-btn-bg)"; }}
+          >
+            Switch to Act
+            <svg width={10} height={10} viewBox="0 0 10 10" fill="currentColor" stroke="none"><path d="M2.5 1.5 L8 5 L2.5 8.5 Z" /></svg>
+          </button>
+        </div>
+      )}
       <div className="relative flex flex-1 overflow-hidden">
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
           <div className="chat-msg-inner mx-auto max-w-[820px] px-4">

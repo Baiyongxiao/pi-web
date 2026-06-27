@@ -1,10 +1,18 @@
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSession,
+  SessionManager,
+  createBashToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { cacheSessionPath } from "./session-reader";
-import type { AgentSessionLike, ModelLike, ToolInfo } from "./pi-types";
+import { isSafeCommand } from "./plan-bash-guard";
+import { PLAN_PROMPT_SUFFIX, PLAN_MODE_MARKER } from "./mode-prompts";
+import type { AgentSessionLike, ModelLike } from "./pi-types";
 
 // ============================================================================
 // Types
 // ============================================================================
+
+export type AgentMode = "plan" | "act";
 
 export interface AgentEvent {
   type: string;
@@ -14,17 +22,58 @@ export interface AgentEvent {
 type EventListener = (event: AgentEvent) => void;
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const CODING_TOOL_SET = new Set(CODING_TOOL_NAMES);
 
-function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
-  if (toolNames.length === 0) return [];
+// Plan mode: read-only investigation only. No edit/write, and `bash` is
+// replaced by a spawnHook-guarded variant (see startRpcSession) that rejects
+// state-changing commands via isSafeCommand.
+const ACT_BUILTIN = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const PLAN_BUILTIN = ["read", "bash", "grep", "find", "ls"];
 
-  const codingToolNames = new Set(CODING_TOOL_NAMES);
+// Extension/package tools that are known to be read-only and thus safe in
+// plan mode. Empty by default — extension tools are NOT auto-included in
+// plan mode, which is what previously made the old "plan" preset leak.
+const PLAN_READONLY_EXTENSION_ALLOWLIST = new Set<string>([]);
+
+const MODE_CUSTOM_TYPE = "pi-web-mode";
+
+/** Build the active tool list for a mode. Extension tools default-on in act,
+ *  and fully disabled in plan unless on the read-only allowlist. */
+function toolsForMode(session: AgentSessionLike, mode: AgentMode): string[] {
   const extensionToolNames = session
     .getAllTools()
     .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
+    .filter((name) => !CODING_TOOL_SET.has(name));
+  if (mode === "plan") {
+    const safe = extensionToolNames.filter((n) => PLAN_READONLY_EXTENSION_ALLOWLIST.has(n));
+    return [...new Set([...PLAN_BUILTIN, ...safe])];
+  }
+  return [...new Set([...ACT_BUILTIN, ...extensionToolNames])];
+}
 
-  return [...new Set([...toolNames, ...extensionToolNames])];
+/** Strip any previously-injected plan suffix from a (possibly rebuilt) prompt. */
+function stripPlanSuffix(prompt: string): string {
+  const idx = prompt.indexOf(PLAN_MODE_MARKER);
+  if (idx === -1) return prompt;
+  return prompt.slice(0, idx).replace(/\n+$/, "");
+}
+
+/** Scan a session file's custom entries for the last `pi-web-mode` record. */
+function readModeFromFile(sessionFile: string | undefined): AgentMode | null {
+  if (!sessionFile) return null;
+  try {
+    const entries = SessionManager.open(sessionFile).getEntries();
+    let last: AgentMode | null = null;
+    for (const e of entries) {
+      const c = e as { customType?: string; data?: { mode?: string } };
+      if (c.customType === MODE_CUSTOM_TYPE && (c.data?.mode === "plan" || c.data?.mode === "act")) {
+        last = c.data!.mode as AgentMode;
+      }
+    }
+    return last;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -38,8 +87,18 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private _alive = true;
+  private _mode: AgentMode;
+  /** Shared with the custom bash tool's spawnHook so it can read the live mode. */
+  readonly modeRef: { mode: AgentMode };
 
-  constructor(public readonly inner: AgentSessionLike) {}
+  constructor(public readonly inner: AgentSessionLike, modeRef: { mode: AgentMode }) {
+    this.modeRef = modeRef;
+    this._mode = modeRef.mode;
+  }
+
+  get mode(): AgentMode {
+    return this._mode;
+  }
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -56,9 +115,24 @@ export class AgentSessionWrapper {
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
+      // pi rebuilds the system prompt after compaction, which strips our
+      // injected plan suffix. Re-inject it if we are still in plan mode.
+      if (
+        (event.type === "compaction_end" || event.type === "auto_compaction_end") &&
+        this._mode === "plan" &&
+        !(event as { aborted?: boolean }).aborted
+      ) {
+        this.applySystemPromptForMode("plan");
+      }
       for (const l of this.listeners) l(event);
     });
     this.resetIdleTimer();
+  }
+
+  /** Set the system prompt for the current mode — injects or strips the plan suffix. */
+  private applySystemPromptForMode(mode: AgentMode): void {
+    const base = stripPlanSuffix(this.inner.agent.state.systemPrompt ?? "");
+    this.inner.agent.state.systemPrompt = mode === "plan" ? base + PLAN_PROMPT_SUFFIX : base;
   }
 
   private resetIdleTimer(): void {
@@ -87,6 +161,7 @@ export class AgentSessionWrapper {
     contextUsage: { percent: number | null; contextWindow: number; tokens: number | null } | null;
     systemPrompt: string;
     thinkingLevel: string;
+    mode: AgentMode;
   } {
     const cu = this.inner.getContextUsage();
     return {
@@ -98,6 +173,7 @@ export class AgentSessionWrapper {
       contextUsage: cu ? { percent: cu.percent, contextWindow: cu.contextWindow, tokens: cu.tokens } : null,
       systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
       thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+      mode: this._mode,
     };
   }
 
@@ -139,6 +215,7 @@ export class AgentSessionWrapper {
             : null,
           systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+          mode: this._mode,
         };
       }
 
@@ -223,19 +300,21 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "get_tools": {
-        const all: ToolInfo[] = this.inner.getAllTools();
-        const active = new Set<string>(this.inner.getActiveToolNames());
-        return all.map((t) => ({
-          name: t.name,
-          description: t.description,
-          active: active.has(t.name),
-        }));
-      }
-
-      case "set_tools": {
-        this.inner.setActiveToolsByName(withExtensionTools(this.inner, command.toolNames as string[]));
-        return null;
+      case "set_mode": {
+        const mode = command.mode as AgentMode;
+        if (mode !== "plan" && mode !== "act") throw new Error(`Invalid mode: ${mode}`);
+        this._mode = mode;
+        this.modeRef.mode = mode;
+        // setActiveToolsByName rebuilds the system prompt; re-inject/strip the
+        // plan suffix afterwards.
+        this.inner.setActiveToolsByName(toolsForMode(this.inner, mode));
+        this.applySystemPromptForMode(mode);
+        try {
+          this.inner.sessionManager.appendCustomEntry(MODE_CUSTOM_TYPE, { mode });
+        } catch {
+          // non-persisted session — nothing to write
+        }
+        return { mode };
       }
 
       case "abort_compaction": {
@@ -298,13 +377,13 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 /**
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
- * Pass toolNames to pre-configure active tools (empty array = all tools disabled).
+ * Pass `mode` to pre-configure plan/act mode (default: act).
  */
 export async function startRpcSession(
   sessionId: string,
   sessionFile: string,
   cwd: string,
-  toolNames?: string[]
+  mode: AgentMode = "act"
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
@@ -323,30 +402,50 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // Don't pass tools: [] — that would prevent tool registration entirely,
-    // making it impossible to re-enable tools later via set_tools.
-    // Instead, register all tools normally and deactivate them below if needed.
+    // Resolve the initial mode: explicit arg > last persisted mode in file > act.
+    const persistedMode = readModeFromFile(sessionFile);
+    const initialMode: AgentMode = mode ?? persistedMode ?? "act";
+
+    // Shared mode holder read by the custom bash spawnHook. The hook is a
+    // no-op in act mode and rejects state-changing commands in plan mode.
+    const modeRef = { mode: initialMode } as { mode: AgentMode };
+
+    // Register a custom `bash` tool that overrides the builtin. In plan mode
+    // its spawnHook enforces isSafeCommand; in act mode it is transparent.
+    const guardedBash = createBashToolDefinition(cwd, {
+      spawnHook: (ctx) => {
+        if (modeRef.mode === "plan" && !isSafeCommand(ctx.command)) {
+          throw new Error(
+            `Plan mode blocked command (not read-only): ${ctx.command}`
+          );
+        }
+        return ctx;
+      },
+    });
+
     const { session: inner } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
+      // guardedBash has the same `name: "bash"` as the builtin, so it overrides
+      // the builtin in the registry (see AgentSession._refreshToolRegistry).
+      customTools: [guardedBash] as unknown as NonNullable<
+        NonNullable<Parameters<typeof createAgentSession>[0]>["customTools"]
+      >,
     });
 
-    // If specific tool names were requested (non-empty), set the active tools to the
-    // requested builtin coding tools PLUS all extension/package tools, so installed
-    // extensions stay usable in pi-web just like in the `pi` CLI.
-    if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
-    } else if (toolNames?.length === 0) {
-      // All tools disabled: deactivate every tool (keep them registered so
-      // the user can re-enable them later via set_tools) and clear the
-      // system prompt since pi's buildSystemPrompt always produces a
-      // non-empty prompt even with no tools.
-      inner.setActiveToolsByName([]);
-      inner.agent.state.systemPrompt = "";
+    // Apply the initial mode's tool set + prompt suffix. For act mode this is
+    // the default builtins + extensions; for plan mode it is the read-only set.
+    inner.setActiveToolsByName(toolsForMode(inner, initialMode));
+    if (initialMode === "plan") {
+      // Need a reference to the wrapper before it's created. Use modeRef
+      // which will be shared with the wrapper — applySystemPromptForMode is
+      // on the wrapper though, so apply inline here.
+      const base = stripPlanSuffix(inner.agent.state.systemPrompt ?? "");
+      inner.agent.state.systemPrompt = base + PLAN_PROMPT_SUFFIX;
     }
 
-    const wrapper = new AgentSessionWrapper(inner);
+    const wrapper = new AgentSessionWrapper(inner, modeRef);
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;

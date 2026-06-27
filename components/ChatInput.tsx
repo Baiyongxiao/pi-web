@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import type { CompactResultInfo } from "@/hooks/useAgentSession";
+import type { AgentMode } from "@/lib/types";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -38,8 +39,8 @@ interface Props {
   isCompacting?: boolean;
   compactError?: string | null;
   compactResult?: CompactResultInfo | null;
-  toolPreset?: "none" | "plan" | "default" | "full";
-  onToolPresetChange?: (preset: "none" | "plan" | "default" | "full") => void;
+  mode?: AgentMode;
+  onModeChange?: (mode: AgentMode) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
   availableThinkingLevels?: string[] | null;
@@ -57,8 +58,7 @@ export interface ChatInputHandle {
   addImages: (files: File[]) => void;
 }
 
-const TOOL_PRESETS = ["off", "plan", "default", "full"] as const;
-const TOOL_PRESET_MAP: Record<"off" | "plan" | "default" | "full", "none" | "plan" | "default" | "full"> = { off: "none", plan: "plan", default: "default", full: "full" };
+// Tool presets removed — replaced by Plan/Act mode toggle.
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -87,7 +87,7 @@ function formatTokenCount(tokens: number): string {
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, onModelChange,
-  onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
+  onCompact, onAbortCompaction, isCompacting, compactError, compactResult, mode, onModeChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
@@ -97,7 +97,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [skillDropdownOpen, setSkillDropdownOpen] = useState(false);
   const [availableSkills, setAvailableSkills] = useState<SkillInfo[]>([]);
@@ -106,7 +105,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
-  const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const skillDropdownRef = useRef<HTMLDivElement>(null);
@@ -341,9 +339,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         modelDropdownPanelRef.current && !modelDropdownPanelRef.current.contains(e.target as Node)
       ) {
         setModelDropdownOpen(false);
-      }
-      if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) {
-        setToolDropdownOpen(false);
       }
       if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
         setThinkingDropdownOpen(false);
@@ -667,6 +662,70 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {/* Bottom bar: left | center (context) | right */}
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: isMobile ? 1 : 6, flexWrap: isMobile ? "wrap" : "nowrap" }}>
 
+          {/* Mode toggle — Plan (read-only) | Act (full execution). Leftmost, highest priority. */}
+          {onModeChange && (
+            <div
+              role="group"
+              aria-label="Agent mode"
+              style={{
+                display: "flex",
+                height: isMobile ? 36 : 32,
+                borderRadius: 9,
+                overflow: "hidden",
+                border: `1px solid ${mode === "plan" ? "var(--plan-border)" : "var(--border)"}`,
+                flexShrink: 0,
+                opacity: isStreaming ? 0.5 : 1,
+              }}
+            >
+              <button
+                onClick={() => !isStreaming && mode !== "plan" && onModeChange("plan")}
+                disabled={isStreaming}
+                title="Plan mode — 只读调研，不修改文件"
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: `0 ${isMobile ? 9 : 11}px`,
+                  height: "100%",
+                  border: "none",
+                  borderRadius: 0,
+                  fontSize: 12, fontWeight: 600, letterSpacing: "-0.01em",
+                  cursor: isStreaming ? "not-allowed" : "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                  background: mode === "plan" ? "var(--plan-bg)" : "transparent",
+                  color: mode === "plan" ? "var(--plan-text)" : "var(--text-muted)",
+                }}
+              >
+                <svg width={11} height={11} viewBox="0 0 10 10" fill="currentColor" stroke="none">
+                  <rect x="2" y="1.5" width="2" height="7" rx="0.6" />
+                  <rect x="6" y="1.5" width="2" height="7" rx="0.6" />
+                </svg>
+                {!isMobile && "Plan"}
+              </button>
+              <button
+                onClick={() => !isStreaming && mode !== "act" && onModeChange("act")}
+                disabled={isStreaming}
+                title="Act mode — 正常执行，可读写文件"
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: `0 ${isMobile ? 9 : 11}px`,
+                  height: "100%",
+                  border: "none",
+                  borderLeft: "1px solid var(--border)",
+                  borderRadius: 0,
+                  fontSize: 12, fontWeight: 600, letterSpacing: "-0.01em",
+                  cursor: isStreaming ? "not-allowed" : "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                  background: mode !== "plan" ? "var(--accent)" : "transparent",
+                  color: mode !== "plan" ? "#fff" : "var(--text-muted)",
+                }}
+              >
+                <svg width={11} height={11} viewBox="0 0 10 10" fill="currentColor" stroke="none">
+                  <path d="M2.5 1.5 L8 5 L2.5 8.5 Z" />
+                </svg>
+                {!isMobile && "Act"}
+              </button>
+            </div>
+          )}
+
           {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
           <div style={{ flex: isMobile ? "1 1 0" : "0 0 auto", display: "flex", alignItems: "center", gap: isMobile ? 1 : 2, minWidth: 0 }}>
             <button
@@ -897,81 +956,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
-            {!isStreaming && onToolPresetChange && (
-              <div ref={toolDropdownRef} style={{ position: "relative" }}>
-                <button
-                  onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
-                  disabled={isStreaming}
-                  title="切换工具预设"
-                  style={{
-                    display: "flex", alignItems: "center", gap: 5,
-                    padding: isMobile ? "8px 10px" : "8px 12px",
-                    height: isMobile ? 36 : 32,
-                    background: toolDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: 9,
-                    color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
-                    fontSize: 12,
-                    opacity: isStreaming ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isStreaming) return;
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = toolDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                  }}
-                >
-                  <svg width={isMobile ? 14 : 11} height={isMobile ? 14 : 11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                  </svg>
-                  {!isMobile && <span>{Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default"}</span>}
-                </button>
-                {toolDropdownOpen && (
-                  <div style={{
-                    position: "absolute", bottom: "calc(100% + 6px)", right: 0,
-                    zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
-                    borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    overflow: "hidden", minWidth: 120,
-                  }}>
-                    {TOOL_PRESETS.map((lvl) => {
-                      const preset = TOOL_PRESET_MAP[lvl];
-                      const isActive = (toolPreset ?? "default") === preset;
-                      const desc = lvl === "off" ? "无工具，纯聊天" : lvl === "plan" ? "查询工具" : lvl === "default" ? "4 项内置工具" : "全部内置工具";
-                      return (
-                        <button
-                          key={lvl}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
-                        >
-                          {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{lvl}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
             {!isStreaming && onCompact && (
               <div style={{ position: "relative" }}>
                 {compactError && (
