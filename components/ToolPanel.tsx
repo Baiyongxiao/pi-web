@@ -8,8 +8,9 @@ export interface ToolEntry {
   active: boolean;
 }
 
-export type ToolPreset = "none" | "default" | "full";
+export type ToolPreset = "none" | "plan" | "default" | "full";
 export const PRESET_NONE: string[] = [];
+export const PRESET_PLAN: string[] = ["read", "bash", "grep", "find", "ls"];
 export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
 export const PRESET_FULL: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
 const BUILTIN_TOOL_NAMES = new Set(PRESET_FULL);
@@ -24,6 +25,7 @@ export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
     .sort()
     .join(",");
 
+  if (active === [...PRESET_PLAN].sort().join(",")) return "plan";
   if (active === [...PRESET_DEFAULT].sort().join(",")) return "default";
   if (active === [...PRESET_FULL].sort().join(",")) return "full";
   return "default"; // closest match
@@ -36,9 +38,10 @@ interface Props {
 }
 
 const PRESETS: { id: ToolPreset; label: string; desc: string; tools: string[] }[] = [
-  { id: "none",    label: "Off",  desc: "No tools",                                tools: PRESET_NONE },
-  { id: "default", label: "Low",  desc: "read · bash · edit · write",              tools: PRESET_DEFAULT },
-  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls", tools: PRESET_FULL },
+  { id: "none",    label: "Off",  desc: "No tools",                                             tools: PRESET_NONE },
+  { id: "plan",    label: "Plan", desc: "只读查询模式",            tools: PRESET_PLAN },
+  { id: "default", label: "Low",  desc: "read · bash · edit · write",                           tools: PRESET_DEFAULT },
+  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls",        tools: PRESET_FULL },
 ];
 
 export function ToolPanel({ tools, onPreset, onClose }: Props) {
@@ -79,7 +82,7 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
       {/* Segmented control */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr",
+        gridTemplateColumns: "1fr 1fr 1fr 1fr",
         background: "var(--bg-panel)",
         borderRadius: 8,
         padding: 3,
@@ -114,6 +117,7 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
       <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
         {currentIndex >= 0 ? PRESETS[currentIndex].desc || "No tools enabled" : ""}
         {current === "none" && <span> — agent will not use any tools</span>}
+        {current === "plan" && <span> — 仅查询，不能编辑</span>}
       </div>
 
       {/* Track bar */}

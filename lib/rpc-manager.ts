@@ -323,25 +323,13 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // Determine which tools to pass based on requested toolNames.
-    // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
-    let toolsOption: string[] | undefined;
-    if (toolNames !== undefined) {
-      // toolNames === [] -> "all off" (an empty allow-list disables every tool).
-      // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
-      // set allowedToolNames to coding builtins only, which filtered every
-      // extension/package-provided tool (e.g. subagents, web access) out of the
-      // tool registry — so they were unavailable in pi-web sessions even though the
-      // `pi` CLI keeps them. Leaving the allow-list unset lets the SDK register all
-      // tools (and activate extension tools); we narrow the ACTIVE set below.
-      toolsOption = toolNames.length === 0 ? [] : undefined;
-    }
-
+    // Don't pass tools: [] — that would prevent tool registration entirely,
+    // making it impossible to re-enable tools later via set_tools.
+    // Instead, register all tools normally and deactivate them below if needed.
     const { session: inner } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
-      ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
     // If specific tool names were requested (non-empty), set the active tools to the
@@ -349,12 +337,12 @@ export async function startRpcSession(
     // extensions stay usable in pi-web just like in the `pi` CLI.
     if (toolNames && toolNames.length > 0) {
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
-    }
-
-    // When all tools are disabled, clear the system prompt entirely.
-    // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
-    // the only way to truly clear it is to call agent.setSystemPrompt directly.
-    if (toolNames?.length === 0) {
+    } else if (toolNames?.length === 0) {
+      // All tools disabled: deactivate every tool (keep them registered so
+      // the user can re-enable them later via set_tools) and clear the
+      // system prompt since pi's buildSystemPrompt always produces a
+      // non-empty prompt even with no tools.
+      inner.setActiveToolsByName([]);
       inner.agent.state.systemPrompt = "";
     }
 
