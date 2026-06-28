@@ -21,14 +21,14 @@ export interface AgentEvent {
 
 type EventListener = (event: AgentEvent) => void;
 
-const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls", "bash-readonly"];
 const CODING_TOOL_SET = new Set(CODING_TOOL_NAMES);
 
 // Plan mode: read-only investigation only. No edit/write, and `bash` is
 // replaced by a spawnHook-guarded variant (see startRpcSession) that rejects
 // state-changing commands via isSafeCommand.
 const ACT_BUILTIN = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const PLAN_BUILTIN = ["read", "bash", "grep", "find", "ls"];
+const PLAN_BUILTIN = ["read", "bash-readonly", "grep", "find", "ls"];
 
 // Extension/package tools that are known to be read-only and thus safe in
 // plan mode. Empty by default — extension tools are NOT auto-included in
@@ -56,6 +56,21 @@ function stripPlanSuffix(prompt: string): string {
   const idx = prompt.indexOf(PLAN_MODE_MARKER);
   if (idx === -1) return prompt;
   return prompt.slice(0, idx).replace(/\n+$/, "");
+}
+
+/** Insert the plan mode header before "Available tools:", with consistent formatting. */
+function injectPlanSuffix(base: string): string {
+  const insertPos = base.indexOf("\nAvailable tools:");
+  if (insertPos !== -1) {
+    return (
+      base.slice(0, insertPos + 1) +
+      PLAN_PROMPT_SUFFIX.trim() +
+      "\n\n" +
+      base.slice(insertPos + 1)
+    );
+  }
+  // Fallback: append with consistent separator
+  return base + "\n\n" + PLAN_PROMPT_SUFFIX.trim();
 }
 
 /** Scan a session file's custom entries for the last `pi-web-mode` record. */
@@ -129,10 +144,12 @@ export class AgentSessionWrapper {
     this.resetIdleTimer();
   }
 
-  /** Set the system prompt for the current mode — injects or strips the plan suffix. */
+  /** Rebuild system prompt + inject/strip plan header for the current mode. */
   private applySystemPromptForMode(mode: AgentMode): void {
+    this.inner.setActiveToolsByName(toolsForMode(this.inner, mode));
     const base = stripPlanSuffix(this.inner.agent.state.systemPrompt ?? "");
-    this.inner.agent.state.systemPrompt = mode === "plan" ? base + PLAN_PROMPT_SUFFIX : base;
+    this.inner.agent.state.systemPrompt =
+      mode === "plan" ? injectPlanSuffix(base) : base;
   }
 
   private resetIdleTimer(): void {
@@ -305,9 +322,6 @@ export class AgentSessionWrapper {
         if (mode !== "plan" && mode !== "act") throw new Error(`Invalid mode: ${mode}`);
         this._mode = mode;
         this.modeRef.mode = mode;
-        // setActiveToolsByName rebuilds the system prompt; re-inject/strip the
-        // plan suffix afterwards.
-        this.inner.setActiveToolsByName(toolsForMode(this.inner, mode));
         this.applySystemPromptForMode(mode);
         try {
           this.inner.sessionManager.appendCustomEntry(MODE_CUSTOM_TYPE, { mode });
@@ -410,39 +424,45 @@ export async function startRpcSession(
     // no-op in act mode and rejects state-changing commands in plan mode.
     const modeRef = { mode: initialMode } as { mode: AgentMode };
 
-    // Register a custom `bash` tool that overrides the builtin. In plan mode
-    // its spawnHook enforces isSafeCommand; in act mode it is transparent.
-    const guardedBash = createBashToolDefinition(cwd, {
-      spawnHook: (ctx) => {
-        if (modeRef.mode === "plan" && !isSafeCommand(ctx.command)) {
-          throw new Error(
-            `Plan mode blocked command (not read-only): ${ctx.command}`
-          );
-        }
-        return ctx;
-      },
-    });
+    // Register a custom bash tool with a DIFFERENT name for plan mode.
+    // `bash-readonly` has a read-only description and spawnHook guard.
+    // The builtin `bash` (no guard) stays in the registry for act mode.
+    const readonlyBash = {
+      ...createBashToolDefinition(cwd, {
+        spawnHook: (ctx) => {
+          if (modeRef.mode === "plan" && !isSafeCommand(ctx.command)) {
+            throw new Error(
+              `Plan mode blocked command (not read-only): ${ctx.command}`
+            );
+          }
+          return ctx;
+        },
+      }),
+      name: "bash-readonly",
+      label: "bash-readonly",
+      promptSnippet:
+        "Execute read-only bash commands. Blocked: rm, mv, > file write, >>, npm install, git push, sudo, and other state-changing operations. Allowed: cat, head, tail, grep, find, ls, pwd, echo, sort, diff, file, which, ps, date, curl, jq, git status/log/diff, and similar read-only queries.",
+    };
 
     const { session: inner } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
-      // guardedBash has the same `name: "bash"` as the builtin, so it overrides
-      // the builtin in the registry (see AgentSession._refreshToolRegistry).
-      customTools: [guardedBash] as unknown as NonNullable<
+      // readonlyBash has a different name ("bash-readonly") so both it and
+      // the builtin "bash" coexist in the registry. Plan mode activates
+      // bash-readonly; act mode activates builtin bash.
+      customTools: [readonlyBash] as unknown as NonNullable<
         NonNullable<Parameters<typeof createAgentSession>[0]>["customTools"]
       >,
     });
 
     // Apply the initial mode's tool set + prompt suffix. For act mode this is
-    // the default builtins + extensions; for plan mode it is the read-only set.
+    // the default builtins + extensions; for plan mode it is the read-only set
+    // (which uses bash-readonly instead of bash) with the plan header injected.
     inner.setActiveToolsByName(toolsForMode(inner, initialMode));
     if (initialMode === "plan") {
-      // Need a reference to the wrapper before it's created. Use modeRef
-      // which will be shared with the wrapper — applySystemPromptForMode is
-      // on the wrapper though, so apply inline here.
       const base = stripPlanSuffix(inner.agent.state.systemPrompt ?? "");
-      inner.agent.state.systemPrompt = base + PLAN_PROMPT_SUFFIX;
+      inner.agent.state.systemPrompt = injectPlanSuffix(base);
     }
 
     const wrapper = new AgentSessionWrapper(inner, modeRef);

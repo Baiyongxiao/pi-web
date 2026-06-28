@@ -103,12 +103,13 @@ const SAFE_PATTERNS = [
   /^\s*fd\b/,
   /^\s*bat\b/,
   /^\s*eza\b/,
+  /^\s*tvly\b/,
 ];
 
 export function isSafeCommand(command: string): boolean {
   // Split on command separators and check each segment independently.
   // This ensures `cmd1 && cmd2` evaluates both parts, not just the first.
-  const segments = command.split(/\s*(?:&&|\|\||\||;)\/ \s*/);
+  const segments = command.split(/\s*(?:&&|\|\||\||;)\s*/);
   return segments.every((seg) => {
     const trimmed = seg.trim();
     if (!trimmed) return true;
