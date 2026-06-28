@@ -243,8 +243,6 @@ export function AppShell() {
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
-  const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
-
   const sidebarContent = (
     <>
       <SessionSidebar
@@ -718,11 +716,24 @@ export function AppShell() {
           )}
         </div>
 
-        {/* File content */}
+        {/* File content — keep all opened tabs mounted, toggle visibility only.
+            This prevents remounting (and re-fetching) when switching back to a
+            previously opened tab, e.g. PPT preview that would reload otherwise. */}
         <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
-            <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
-          ) : (
+          {fileTabs.map((tab) => (
+            <div
+              key={tab.id}
+              style={{
+                width: "100%",
+                height: "100%",
+                display: tab.id === activeFileTabId ? "flex" : "none",
+                flexDirection: "column",
+              }}
+            >
+              <FileViewer filePath={tab.filePath} cwd={activeCwd ?? undefined} />
+            </div>
+          ))}
+          {fileTabs.length === 0 && (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               No file open
             </div>
