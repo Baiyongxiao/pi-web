@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { encodeFilePathForApi, getRelativeFilePath } from "@/lib/file-paths";
 
 interface Props {
@@ -18,6 +18,7 @@ export default function DocxViewer({ filePath, cwd }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState(1.2);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +72,9 @@ export default function DocxViewer({ filePath, cwd }: Props) {
     };
   }, [filePath]);
 
+  const zoomIn = useCallback(() => setScale((s) => Math.min(s + 0.25, 4)), []);
+  const zoomOut = useCallback(() => setScale((s) => Math.max(s - 0.25, 0.4)), []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div
@@ -93,10 +97,39 @@ export default function DocxViewer({ filePath, cwd }: Props) {
           {getRelativeFilePath(filePath, cwd)}
         </span>
         <span style={{ marginLeft: "auto" }}>docx</span>
+        {/* Zoom controls — same style as PdfViewer */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <button
+            onClick={zoomOut}
+            title="Zoom out"
+            style={{
+              width: 22, height: 22, fontSize: 14, lineHeight: 1, cursor: "pointer",
+              background: "var(--bg-hover)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5,
+            }}
+          >−</button>
+          <span style={{ minWidth: 34, textAlign: "center", fontFamily: "var(--font-mono)" }}>
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            onClick={zoomIn}
+            title="Zoom in"
+            style={{
+              width: 22, height: 22, fontSize: 14, lineHeight: 1, cursor: "pointer",
+              background: "var(--bg-hover)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5,
+            }}
+          >+</button>
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#eef1f5", overflow: "auto" }}>
-        {/* docx-preview render target — React never touches children here. */}
-        <div ref={containerRef} className="docx-viewer" style={{ minHeight: "100%" }} />
+        {/* Scale wrapper — width compensation ensures the scroll container's
+            layout size matches the visual content after transform, preventing
+            clipping on zoom-in or excessive whitespace on zoom-out. */}
+        <div style={{ width: `${100 / scale}%` }}>
+          <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+            {/* docx-preview render target — React never touches children here. */}
+            <div ref={containerRef} className="docx-viewer" />
+          </div>
+        </div>
         {loading && !error && (
           <div
             style={{
