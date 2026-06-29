@@ -50,6 +50,25 @@ const DESTRUCTIVE_PATTERNS = [
 
 // Safe read-only commands allowed in plan mode
 const SAFE_PATTERNS = [
+  // Shell control flow keywords — harmless on their own; destructive commands
+  // inside loops/conditionals are caught by DESTRUCTIVE_PATTERNS per-segment.
+  /^\s*for\b/,
+  /^\s*while\b/,
+  /^\s*until\b/,
+  /^\s*do\b/,
+  /^\s*done\b/,
+  /^\s*if\b/,
+  /^\s*then\b/,
+  /^\s*elif\b/,
+  /^\s*else\b/,
+  /^\s*fi\b/,
+  /^\s*case\b/,
+  /^\s*esac\b/,
+  /^\s*in\b/,
+  /^\s*select\b/,
+  /^\s*time\b/,
+  /^\s*\{/,
+  /^\s*\}/,
   /^\s*cat\b/,
   /^\s*head\b/,
   /^\s*tail\b/,
